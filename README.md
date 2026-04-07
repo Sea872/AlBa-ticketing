@@ -196,7 +196,9 @@ Invoke-RestMethod -Method DELETE -Uri "$base/api/admin/concerts/$id/products/$li
 - **Headers:** `X-Shopify-Hmac-Sha256` (required), `X-Shopify-Topic: orders/paid` (optional; other topics are accepted with **`200`** and `ignored: true`).
 - **Env:** set **`SHOPIFY_WEBHOOK_SECRET`** (preferred) or **`SHOPIFY_API_SECRET`** to your app’s **API secret key** used to verify the HMAC.
 
-Behaviour: verifies HMAC → parses JSON → reads `id` (Shopify order id) → if already in **`processed_orders`**, returns **`200`** `{ duplicate: true }` (idempotent); otherwise inserts a row and returns **`200`** `{ processed: true }`. Invalid HMAC → **`401`** `invalid_hmac`. Phase 9 will add ticket creation around this flow.
+Behaviour: verifies HMAC → parses JSON → reads `id` → if already in **`processed_orders`**, returns **`200`** `{ duplicate: true }`. Otherwise, in one transaction: **`pg_advisory_xact_lock`** per order id → creates **`ticket_assignments`** for each seat on line items whose **`product_id`** matches an **`active`** concert’s linked **`concert_products`** row → inserts **`processed_orders`**. Response includes **`ticketsCreated`** (may be `0` if no matching products or missing email — see below). Invalid HMAC → **`401`** `invalid_hmac`.
+
+If the order has **no `email` / `contact_email` / `customer.email`**, the run is still marked processed with **`ticketsCreated: 0`** and **`skippedReason: "missing_email"`** so Shopify does not retry forever.
 
 ### Manual test guide (Shopify webhook)
 
@@ -223,7 +225,27 @@ curl -s -w "\nHTTP:%{http_code}\n" -X POST "http://localhost:8000/webhooks/shopi
 
 Expect **`200`** and `"processed":true`. Run the same `curl` again → **`200`** and `"duplicate":true`.
 
-**3. Negative checks**
+**3. Ticket extraction (Phase 9)**
+
+1. Create an **`active`** concert and **`POST`** a **`concert_products`** link whose **`shopifyProductId`** matches a **`product_id`** you will put in the fake order (e.g. `888888888`).
+2. Build a minimal order body with **`email`**, **`line_items`** with **`id`**, **`product_id`**, **`quantity`**:
+
+```bash
+export BODY='{"id":777001,"email":"buyer@example.com","line_items":[{"id":555001,"product_id":888888888,"quantity":2}]}'
+export SECRET='paste_same_value_as_in_env'
+export HMAC=$(node -e "const c=require('crypto');const b=process.env.BODY;const s=process.env.SECRET;process.stdout.write(c.createHmac('sha256',s).update(b,'utf8').digest('base64'))")
+curl -s -X POST "http://localhost:8000/webhooks/shopify/orders-paid" \
+  -H "Content-Type: application/json" \
+  -H "X-Shopify-Hmac-Sha256: $HMAC" \
+  -H "X-Shopify-Topic: orders/paid" \
+  -d "$BODY"
+```
+
+Expect **`ticketsCreated":2`** (or your quantity). Re-post the same body → **`duplicate":true`** and **no** extra rows.
+
+3. **SQL check (optional):** `SELECT * FROM ticket_assignments WHERE shopify_order_id = 777001;`
+
+**4. Negative checks**
 
 | Check | Expected |
 |--------|----------|
@@ -231,6 +253,7 @@ Expect **`200`** and `"processed":true`. Run the same `curl` again → **`200`**
 | Body not valid JSON | **`400`** |
 | Missing `id` on order | **`400`** |
 | Wrong `X-Shopify-Topic` (e.g. `orders/cancelled`) | **`200`**, `ignored: true` |
+| Order without email fields | **`200`**, `ticketsCreated: 0`, `skippedReason: missing_email` |
 
 **PowerShell:** set `$BODY`, `$SECRET`, then:
 

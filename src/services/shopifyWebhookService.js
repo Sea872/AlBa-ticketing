@@ -1,11 +1,8 @@
 import crypto from "node:crypto";
 import { loadConfig } from "../config.js";
-import {
-  findProcessedOrderByShopifyId,
-  insertProcessedOrder,
-} from "../db/repositories/processedOrdersRepository.js";
+import { processOrdersPaidWithTickets } from "./orderTicketExtractionService.js";
 import { HttpError } from "../utils/httpError.js";
-import { logInfo, logWarn } from "../utils/logger.js";
+import { logWarn } from "../utils/logger.js";
 
 const ordersPaidTopic = "orders/paid";
 
@@ -27,58 +24,6 @@ export function verifyShopifyWebhookHmac(rawBodyBuffer, receivedHmacHeader, secr
     return false;
   }
   return crypto.timingSafeEqual(a, b);
-}
-
-export function extractShopifyOrderIdFromPayload(payload) {
-  if (!payload || typeof payload !== "object") {
-    throw new HttpError(400, "invalid payload", { code: "invalid_payload" });
-  }
-  const id = payload.id;
-  if (typeof id === "number" && Number.isInteger(id) && id > 0) {
-    return String(id);
-  }
-  if (typeof id === "string" && /^\d+$/.test(id) && id !== "0") {
-    return id;
-  }
-  throw new HttpError(400, "order id missing or invalid", { code: "invalid_payload" });
-}
-
-/**
- * Handles verified `orders/paid` JSON: idempotency via `processed_orders`.
- * Phase 9 will add ticket issuance before (or in the same transaction as) recording processed orders.
- */
-export async function processOrdersPaidPayload(payload, meta = {}) {
-  const shopifyOrderId = extractShopifyOrderIdFromPayload(payload);
-
-  const existing = await findProcessedOrderByShopifyId(shopifyOrderId);
-  if (existing) {
-    logInfo("shopify orders/paid duplicate", {
-      shopifyOrderId,
-      topic: meta.topic ?? null,
-      shopDomain: meta.shopDomain ?? null,
-    });
-    return { duplicate: true, shopifyOrderId };
-  }
-
-  try {
-    await insertProcessedOrder(shopifyOrderId);
-  } catch (err) {
-    if (err && err.code === "23505") {
-      logInfo("shopify orders/paid duplicate (race)", {
-        shopifyOrderId,
-        topic: meta.topic ?? null,
-      });
-      return { duplicate: true, shopifyOrderId };
-    }
-    throw err;
-  }
-
-  logInfo("shopify orders/paid recorded", {
-    shopifyOrderId,
-    topic: meta.topic ?? null,
-    shopDomain: meta.shopDomain ?? null,
-  });
-  return { processed: true, shopifyOrderId };
 }
 
 /**
@@ -121,7 +66,7 @@ export async function handleOrdersPaidWebhook(req, res) {
 
   const shopDomain = req.get("X-Shopify-Shop-Domain") ?? null;
 
-  const result = await processOrdersPaidPayload(payload, {
+  const result = await processOrdersPaidWithTickets(payload, {
     topic: topicHeader ?? ordersPaidTopic,
     shopDomain,
   });
@@ -131,9 +76,14 @@ export async function handleOrdersPaidWebhook(req, res) {
     return;
   }
 
-  res.status(200).json({
+  const body = {
     ok: true,
     processed: true,
     shopifyOrderId: result.shopifyOrderId,
-  });
+    ticketsCreated: result.ticketsCreated,
+  };
+  if (result.skippedReason) {
+    body.skippedReason = result.skippedReason;
+  }
+  res.status(200).json(body);
 }

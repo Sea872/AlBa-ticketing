@@ -33,3 +33,21 @@ export async function deleteConcertProduct(concertId, linkId) {
   );
   return res.rows[0] ?? null;
 }
+
+/**
+ * First active concert linked to this Shopify product id (deterministic order).
+ */
+export async function findActiveConcertIdForShopifyProduct(shopifyProductId, client = null) {
+  const executor = client ?? getPool();
+  const res = await executor.query(
+    `SELECT cp.concert_id
+     FROM concert_products cp
+     INNER JOIN concerts c ON c.id = cp.concert_id
+     WHERE cp.shopify_product_id = $1::bigint
+       AND c.status = 'active'
+     ORDER BY cp.created_at ASC
+     LIMIT 1`,
+    [String(shopifyProductId)]
+  );
+  return res.rows[0]?.concert_id ?? null;
+}
