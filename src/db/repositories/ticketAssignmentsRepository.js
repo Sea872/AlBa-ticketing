@@ -45,3 +45,21 @@ export async function insertTicketAssignment(row, client = null) {
   );
   return res.rows[0];
 }
+
+/**
+ * @param {string} ticketId
+ * @param {object} qrPayload
+ * @param {string} qrFilePath
+ * @param {import('pg').PoolClient | null} [client]
+ */
+export async function updateTicketQrAssignment(ticketId, qrPayload, qrFilePath, client = null) {
+  const executor = client ?? getPool();
+  await executor.query(
+    `UPDATE ticket_assignments
+     SET qr_payload = $1::jsonb,
+         qr_file_path = $2,
+         updated_at = now()
+     WHERE id = $3::uuid`,
+    [JSON.stringify(qrPayload), qrFilePath, ticketId]
+  );
+}

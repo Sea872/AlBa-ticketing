@@ -245,7 +245,9 @@ Expect **`ticketsCreated":2`** (or your quantity). Re-post the same body → **`
 
 3. **SQL check (optional):** `SELECT * FROM ticket_assignments WHERE shopify_order_id = 777001;`
 
-**4. Negative checks**
+4. **QR files (Phase 10):** After a successful webhook with tickets, PNGs are written under **`storage/tickets/<ticketId>.png`** (override with **`TICKET_STORAGE_DIR`**). The DB column **`qr_file_path`** holds a repo-relative path; **`qr_payload`** JSON includes **`schemaVersion`**, **`ticketId`**, **`concertId`**, **`shopifyOrderId`**, **`shopifyLineItemId`**, **`ticketIndex`**.
+
+**5. Negative checks**
 
 | Check | Expected |
 |--------|----------|
@@ -281,4 +283,14 @@ See `draft-plan.md` for phased delivery. Folders under `src/` mirror that plan (
 
 ## Environment
 
-See `.env.example` for variables used as features land (database, Shopify, Resend, JWT).
+See `.env.example` for variables used as features land (database, Shopify, Resend, JWT, ticket storage).
+
+### Manual test guide (QR files)
+
+After the **§3. Ticket extraction** webhook test (with `ticketsCreated` > 0), confirm files exist:
+
+```bash
+ls storage/tickets/*.png
+```
+
+Open a PNG with an image viewer; the QR should decode to JSON containing `ticketId` and `concertId`. If the DB transaction rolls back after a QR write, the app attempts to delete those PNGs (best-effort).

@@ -1,10 +1,15 @@
+import fs from "node:fs/promises";
 import { getPool } from "../db/client/pool.js";
 import { findActiveConcertIdForShopifyProduct } from "../db/repositories/concertProductsRepository.js";
-import { insertTicketAssignment } from "../db/repositories/ticketAssignmentsRepository.js";
+import {
+  insertTicketAssignment,
+  updateTicketQrAssignment,
+} from "../db/repositories/ticketAssignmentsRepository.js";
 import {
   findProcessedOrderByShopifyId,
   insertProcessedOrder,
 } from "../db/repositories/processedOrdersRepository.js";
+import { buildQrPayloadForTicket, writeTicketQrPng } from "./ticketQrService.js";
 import { extractShopifyOrderIdFromPayload } from "../utils/shopifyOrderPayload.js";
 import { logInfo, logWarn } from "../utils/logger.js";
 
@@ -51,6 +56,8 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
 
   const pool = getPool();
   const client = await pool.connect();
+  /** @type {string[]} */
+  const writtenQrFiles = [];
 
   try {
     await client.query("BEGIN");
@@ -125,7 +132,7 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
           shopifyLineItemId: lineIdStr,
           ticketIndex: t,
         });
-        await insertTicketAssignment(
+        const row = await insertTicketAssignment(
           {
             concertId,
             shopifyOrderId,
@@ -136,6 +143,17 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
           },
           client
         );
+        const ticketId = row.id;
+        const finalPayload = buildQrPayloadForTicket({
+          ticketId,
+          concertId,
+          shopifyOrderId,
+          shopifyLineItemId: lineIdStr,
+          ticketIndex: t,
+        });
+        const { absolutePath, relativePath } = await writeTicketQrPng(ticketId, finalPayload);
+        writtenQrFiles.push(absolutePath);
+        await updateTicketQrAssignment(ticketId, finalPayload, relativePath, client);
         ticketsCreated += 1;
       }
     }
@@ -153,6 +171,13 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
     return { processed: true, shopifyOrderId, ticketsCreated };
   } catch (err) {
     await client.query("ROLLBACK");
+    for (const filePath of writtenQrFiles) {
+      try {
+        await fs.unlink(filePath);
+      } catch {
+        /* ignore cleanup errors */
+      }
+    }
     if (err && err.code === "23505") {
       logInfo("shopify orders/paid duplicate (constraint)", { shopifyOrderId });
       return { duplicate: true, shopifyOrderId, ticketsCreated: 0 };

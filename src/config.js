@@ -1,8 +1,10 @@
+import path from "node:path";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 const defaultPort = 8000;
+const defaultTicketStorageDir = "storage/tickets";
 
 /** Development-only secret; production must set JWT_SECRET. */
 const devJwtSecret = "development-only-jwt-secret-min-32-chars!!";
@@ -22,6 +24,11 @@ export function loadConfig() {
   const shopifyWebhookSecret =
     process.env.SHOPIFY_WEBHOOK_SECRET ?? process.env.SHOPIFY_API_SECRET ?? null;
 
+  const ticketStorageDir = path.resolve(
+    process.cwd(),
+    process.env.TICKET_STORAGE_DIR ?? defaultTicketStorageDir
+  );
+
   return {
     nodeEnv: nodeEnv,
     port: Number.isFinite(port) && port > 0 ? port : defaultPort,
@@ -30,5 +37,6 @@ export function loadConfig() {
     jwtSecret,
     jwtExpiresIn,
     shopifyWebhookSecret,
+    ticketStorageDir,
   };
 }
