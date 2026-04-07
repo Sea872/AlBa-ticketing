@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import morgan from "morgan";
 import { createHealthRouter } from "../routes/healthRoutes.js";
 import { createShopifyWebhookRouter } from "../routes/shopifyWebhookRoutes.js";
 import { createAdminAuthRouter } from "../routes/adminAuthRoutes.js";
@@ -20,6 +21,8 @@ export function createApp() {
   const app = express();
 
   app.disable("x-powered-by");
+
+  app.use(morgan("dev"));
 
   // Shopify webhooks need the raw body for HMAC — must be registered before express.json()
   app.use("/webhooks", createShopifyWebhookRouter());
