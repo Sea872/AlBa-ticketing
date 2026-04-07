@@ -1,6 +1,6 @@
 # Concert ticketing backend (Alba GB)
 
-Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webhooks, tickets, QR email, and admin APIs. **Check-in API and staff scan UI** are post-MVP (see `draft-plan.md`).
+Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webhooks, tickets, QR email, admin APIs, and **check-in validation** (`POST /api/admin/check-in/scan`). A **mobile staff scan UI** remains post-MVP (see `draft-plan.md`).
 
 ## Conventions (project-wide)
 
@@ -131,6 +131,18 @@ Duplicate `(concert, shopify_product_id)` returns **`409`** with `duplicate_link
 | `POST` | `/api/admin/tickets/resend` | exactly one of `shopifyOrderId` (numeric order id) or `ticketId` (UUID) |
 
 See **Ticket resend (admin, Phase 12)** below for behaviour, rate limits, and curl examples.
+
+### Check-in / gate scan (admin, JWT required)
+
+Validate a ticket QR at a specific concert (the **gate**). The QR must decode to JSON matching **`ticketQrService`** (`schemaVersion` **1**, `ticketId`, `concertId`, `shopifyOrderId`, `shopifyLineItemId`, `ticketIndex`).
+
+| Method | Path | Body (JSON) |
+|--------|------|-------------|
+| `POST` | `/api/admin/check-in/scan` | **`concertId`** (UUID of the show at this entrance), plus **`qrPayload`** (object) **or** **`qr`** (string of JSON). Optional **`deviceInfo`**. |
+
+The **`result`** field in the response is one of: **`valid`** (first entry; ticket marked `used`), **`already_used`**, **`wrong_event`** (ticket is for another concert), **`cancelled`**, **`invalid`** (unknown ticket, bad JSON, or tampered payload). Every attempt appends a row to **`scan_logs`**.
+
+See **Check-in (Phase 14)** below for curl examples.
 
 ### Manual test guide (concerts)
 
@@ -287,7 +299,7 @@ Invoke-RestMethod -Method POST -Uri "http://localhost:8000/webhooks/shopify/orde
 
 ## Project layout
 
-See `draft-plan.md` for phased delivery. Folders under `src/` mirror that plan (`routes`, `services`, `db`, `admin`, `webhooks`, `tickets`, `emails`, `checkin` for later phases). **`docs/`** holds `runbook.md` and `nginx-example.conf`; **`scripts/`** includes `runBackup.js`; **`backups/`** is the default output for `npm run backup` (ignored in git except `.gitkeep`).
+See `draft-plan.md` for phased delivery. Folders under `src/` mirror that plan (`routes`, `services`, `db`, `webhooks`, `emails`, etc.). Check-in logic lives in **`src/services/checkInService.js`**. **`docs/`** holds `runbook.md` and `nginx-example.conf`; **`scripts/`** includes `runBackup.js`; **`backups/`** is the default output for `npm run backup` (ignored in git except `.gitkeep`).
 
 ## Environment
 
@@ -344,3 +356,21 @@ Or resend one ticket: `-d '{"ticketId":"PASTE_TICKET_UUID"}'`.
 - **Runbook:** see **`docs/runbook.md`** for environment variables, Nginx + PM2 deployment, restore steps, cron example, pre–go-live test checklist, and operational flows (concerts, Shopify links, test purchase, email, event day).
 - **Nginx:** example **`docs/nginx-example.conf`** (reverse proxy to the Node **`PORT`**).
 - **PM2:** example **`ecosystem.config.cjs`** at the repo root.
+
+### Check-in validation (Phase 14)
+
+1. Obtain a ticket’s QR payload (decode the PNG or read **`ticket_assignments.qr_payload`**).
+2. **`POST /api/admin/check-in/scan`** with **`concertId`** set to that ticket’s **`concert_id`** and **`qrPayload`** copied from the row (or stringified in **`qr`**).
+
+```bash
+TOKEN=... # from /api/admin/login
+CONCERT_ID=... # UUID of the concert
+# Minimal example — replace qrPayload with your ticket JSON
+curl -s -X POST http://localhost:8000/api/admin/check-in/scan \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"concertId\":\"$CONCERT_ID\",\"qrPayload\":{\"schemaVersion\":1,\"ticketId\":\"TICKET_UUID\",\"concertId\":\"CONCERT_UUID\",\"shopifyOrderId\":\"1\",\"shopifyLineItemId\":\"1\",\"ticketIndex\":1}}"
+```
+
+3. Expect **`result":"valid"`** once; a second scan with the same payload returns **`already_used`**. Use a different **`concertId`** than the ticket’s concert to see **`wrong_event`**.
+
+**SQL:** `SELECT * FROM scan_logs ORDER BY scanned_at DESC LIMIT 10;`

@@ -152,7 +152,7 @@ If DB and files are from different nights, some QR files may be missing or extra
 
 ### Event day (MVP)
 
-- **Check-in scanning** is **post-MVP** (see `draft-plan.md`). For MVP, staff can use the email PDF/PNG or a manual list exported from the database if needed.
+- **Gate check-in:** **`POST /api/admin/check-in/scan`** with **`concertId`** (the show at this entrance) and **`qrPayload`** or **`qr`** (JSON string from the ticket QR). Use an admin JWT; responses include **`result`**: `valid`, `already_used`, `wrong_event`, `cancelled`, or `invalid`. Rows are recorded in **`scan_logs`**. A dedicated **browser scan UI** is optional (post-MVP); staff can paste payload JSON or use a generic QR reader that copies the string.
 - Monitor app logs and Nginx error logs; **`GET /health`** for uptime checks.
 
 ## Testing checklist (pre–go-live)
@@ -167,7 +167,7 @@ Use this as a sign-off list. Details and curl examples are in **`README.md`**.
 | 4 | Duplicate webhook | Same `orders/paid` body twice → second response **`duplicate: true`**, no new tickets |
 | 5 | Email failure | With invalid Resend key or blocked send, tickets still created; **`email_last_error`** set; admin can **resend** after fix |
 | 6 | Resend | **`POST /api/admin/tickets/resend`** succeeds and increments **`email_resend_count`** |
-| 7 | Duplicate scans (post-MVP) | Not applicable until check-in API exists |
+| 7 | Duplicate scan | Second **`POST .../check-in/scan`** with same ticket at same gate → **`already_used`**; **`scan_logs`** has two rows |
 
 ## Troubleshooting
 
@@ -187,3 +187,4 @@ Use this as a sign-off list. Details and curl examples are in **`README.md`**.
 | `ecosystem.config.cjs` | PM2 |
 | `docs/nginx-example.conf` | Nginx reverse proxy snippet |
 | `scripts/runBackup.js` | Backup implementation |
+| `src/services/checkInService.js` | Gate scan / ticket validation |

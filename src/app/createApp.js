@@ -5,6 +5,7 @@ import { createAdminAuthRouter } from "../routes/adminAuthRoutes.js";
 import { createAdminConcertProductRouter } from "../routes/adminConcertProductRoutes.js";
 import { createAdminConcertRouter } from "../routes/adminConcertRoutes.js";
 import { createAdminTicketRouter } from "../routes/adminTicketRoutes.js";
+import { createAdminCheckinRouter } from "../routes/adminCheckinRoutes.js";
 import { registerErrorHandler } from "../middleware/errorHandler.js";
 
 /**
@@ -27,6 +28,7 @@ export function createApp() {
   app.use("/api/admin/concerts/:concertId/products", createAdminConcertProductRouter());
   app.use("/api/admin/concerts", createAdminConcertRouter());
   app.use("/api/admin/tickets", createAdminTicketRouter());
+  app.use("/api/admin/check-in", createAdminCheckinRouter());
 
   app.use((req, res) => {
     res.status(404).json({ ok: false, error: "not_found" });
