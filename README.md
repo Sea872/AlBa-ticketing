@@ -124,6 +124,14 @@ Link Shopify **product** IDs to a concert so webhooks can match line items later
 
 Duplicate `(concert, shopify_product_id)` returns **`409`** with `duplicate_link`. Inactive concert returns **`400`** with `concert_not_active`.
 
+### Ticket email resend (admin, JWT required)
+
+| Method | Path | Body (JSON) |
+|--------|------|---------------|
+| `POST` | `/api/admin/tickets/resend` | exactly one of `shopifyOrderId` (numeric order id) or `ticketId` (UUID) |
+
+See **Ticket resend (admin, Phase 12)** below for behaviour, rate limits, and curl examples.
+
 ### Manual test guide (concerts)
 
 With the server running (`npm run dev`), set shell variables (PowerShell examples):
@@ -272,7 +280,7 @@ Invoke-RestMethod -Method POST -Uri "http://localhost:8000/webhooks/shopify/orde
 ## Database
 
 - The PostgreSQL **server** must exist and your user must be allowed to `CREATE DATABASE`. The app database itself is created with `npm run db:create` (or `createdb`) before `npm run migrate` — migrations cannot create the empty database because nothing can connect to it yet.
-- SQL migrations live in `src/db/migrations/` and are applied in filename order by `npm run migrate` (includes email columns on `ticket_assignments` for Resend).
+- SQL migrations live in `src/db/migrations/` and are applied in filename order by `npm run migrate` (includes email columns and **`email_resend_count`** on `ticket_assignments`).
 - Applied versions are recorded in table `schema_migrations`.
 - App code should use `getPool()` from `src/db/client/pool.js` (requires `DATABASE_URL`).
 - `concerts.concert_date` stores the show date (PostgreSQL `date` type); other tables match `draft-plan.md` (`ticket_assignments`, `scan_logs`, etc.).
@@ -304,3 +312,28 @@ Open a PNG with an image viewer; the QR should decode to JSON containing `ticket
 5. On failure, **`emailSent": false`** and **`emailError`** appear; DB rows get **`email_last_error`**.
 
 **SQL:** `SELECT email_sent_at, email_last_error, email_provider_id FROM ticket_assignments ORDER BY created_at DESC LIMIT 3;`
+
+### Ticket resend (admin, Phase 12)
+
+1. Run **`npm run migrate`** so **`003_ticket_resend_count.sql`** adds **`email_resend_count`** (increments on each successful admin resend).
+2. **`POST /api/admin/tickets/resend`** (JWT required). Body must include **exactly one** of:
+   - **`shopifyOrderId`** — resend all tickets for that Shopify order (string or number, e.g. `777001`).
+   - **`ticketId`** — resend a single ticket (UUID of **`ticket_assignments.id`**).
+3. Requires **`RESEND_API_KEY`** (same as Phase 11). Subject line includes **(resent)** when sent via this endpoint.
+4. In-memory **rate limit:** at most one resend per admin user per order or per ticket every **30 seconds** → **`429`** `rate_limited` if exceeded.
+5. On success: **`200`** `{ ok: true, sent: true, shopifyOrderId, ticketCount, providerId }` and **`email_resend_count`** increases for each ticket row resent. On provider failure: **`200`** with **`sent: false`** and **`error`**. If Resend is not configured: **`200`** with **`skipped: true`**.
+
+**Manual test (after a webhook created tickets for order `777001`):**
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/admin/login -H "Content-Type: application/json" \
+  -d '{"email":"YOUR_EMAIL","password":"YOUR_PASSWORD"}' | jq -r .token)
+
+curl -s -X POST http://localhost:8000/api/admin/tickets/resend \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"shopifyOrderId":777001}'
+```
+
+Or resend one ticket: `-d '{"ticketId":"PASTE_TICKET_UUID"}'`.
+
+**SQL:** `SELECT id, shopify_order_id, email_sent_at, email_resend_count FROM ticket_assignments WHERE shopify_order_id = 777001;`

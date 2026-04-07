@@ -102,3 +102,43 @@ export async function markTicketsEmailFailure(ticketIds, errorMessage, client = 
     [ticketIds, msg]
   );
 }
+
+export async function listTicketAssignmentsByShopifyOrderId(shopifyOrderId) {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT id, concert_id, shopify_order_id, shopify_line_item_id, customer_email, ticket_index,
+            qr_file_path, status, created_at
+     FROM ticket_assignments
+     WHERE shopify_order_id = $1::bigint
+     ORDER BY shopify_line_item_id ASC, ticket_index ASC`,
+    [String(shopifyOrderId)]
+  );
+  return res.rows;
+}
+
+export async function findTicketAssignmentById(ticketId) {
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT id, concert_id, shopify_order_id, shopify_line_item_id, customer_email, ticket_index,
+            qr_file_path, status, created_at
+     FROM ticket_assignments
+     WHERE id = $1::uuid
+     LIMIT 1`,
+    [ticketId]
+  );
+  return res.rows[0] ?? null;
+}
+
+export async function incrementTicketResendCount(ticketIds, client = null) {
+  if (ticketIds.length === 0) {
+    return;
+  }
+  const executor = client ?? getPool();
+  await executor.query(
+    `UPDATE ticket_assignments
+     SET email_resend_count = email_resend_count + 1,
+         updated_at = now()
+     WHERE id = ANY($1::uuid[])`,
+    [ticketIds]
+  );
+}

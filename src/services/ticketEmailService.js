@@ -25,9 +25,9 @@ async function buildConcertLabel(concertId) {
 
 /**
  * Sends one email per paid order with all QR PNGs attached. Does not throw; updates DB on success/failure.
- * @param {{ shopifyOrderId: string, customerEmail: string, tickets: TicketEmailRow[] }} params
+ * @param {{ shopifyOrderId: string, customerEmail: string, tickets: TicketEmailRow[], isResend?: boolean }} params
  */
-export async function sendOrderTicketEmail({ shopifyOrderId, customerEmail, tickets }) {
+export async function sendOrderTicketEmail({ shopifyOrderId, customerEmail, tickets, isResend = false }) {
   const { resendApiKey, resendFromEmail } = loadConfig();
 
   const ticketIds = tickets.map((t) => t.ticketId);
@@ -60,10 +60,14 @@ export async function sendOrderTicketEmail({ shopifyOrderId, customerEmail, tick
     }));
 
     const resend = new Resend(resendApiKey);
+    const subject = isResend
+      ? `Your concert tickets (resent) — order ${shopifyOrderId}`
+      : `Your concert tickets — order ${shopifyOrderId}`;
+
     const result = await resend.emails.send({
       from: resendFromEmail,
       to: customerEmail,
-      subject: `Your concert tickets — order ${shopifyOrderId}`,
+      subject,
       html,
       attachments,
     });

@@ -4,6 +4,7 @@ import { createShopifyWebhookRouter } from "../routes/shopifyWebhookRoutes.js";
 import { createAdminAuthRouter } from "../routes/adminAuthRoutes.js";
 import { createAdminConcertProductRouter } from "../routes/adminConcertProductRoutes.js";
 import { createAdminConcertRouter } from "../routes/adminConcertRoutes.js";
+import { createAdminTicketRouter } from "../routes/adminTicketRoutes.js";
 import { registerErrorHandler } from "../middleware/errorHandler.js";
 
 /**
@@ -25,6 +26,7 @@ export function createApp() {
   // Register before generic /api/admin/concerts so "products" is not captured as :concertId
   app.use("/api/admin/concerts/:concertId/products", createAdminConcertProductRouter());
   app.use("/api/admin/concerts", createAdminConcertRouter());
+  app.use("/api/admin/tickets", createAdminTicketRouter());
 
   app.use((req, res) => {
     res.status(404).json({ ok: false, error: "not_found" });
