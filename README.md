@@ -287,7 +287,7 @@ Invoke-RestMethod -Method POST -Uri "http://localhost:8000/webhooks/shopify/orde
 
 ## Project layout
 
-See `draft-plan.md` for phased delivery. Folders under `src/` mirror that plan (`routes`, `services`, `db`, `admin`, `webhooks`, `tickets`, `emails`, `checkin` for later phases).
+See `draft-plan.md` for phased delivery. Folders under `src/` mirror that plan (`routes`, `services`, `db`, `admin`, `webhooks`, `tickets`, `emails`, `checkin` for later phases). **`docs/`** holds `runbook.md` and `nginx-example.conf`; **`scripts/`** includes `runBackup.js`; **`backups/`** is the default output for `npm run backup` (ignored in git except `.gitkeep`).
 
 ## Environment
 
@@ -337,3 +337,10 @@ curl -s -X POST http://localhost:8000/api/admin/tickets/resend \
 Or resend one ticket: `-d '{"ticketId":"PASTE_TICKET_UUID"}'`.
 
 **SQL:** `SELECT id, shopify_order_id, email_sent_at, email_resend_count FROM ticket_assignments WHERE shopify_order_id = 777001;`
+
+## Backup, deployment, and operations (Phase 13)
+
+- **Backups:** `npm run backup` writes a gzipped PostgreSQL dump and a tarball of the ticket storage directory under **`BACKUP_DIR`** (default **`backups/`**). Requires **`pg_dump`** and **`tar`** on your `PATH` (install `postgresql-client` on Ubuntu).
+- **Runbook:** see **`docs/runbook.md`** for environment variables, Nginx + PM2 deployment, restore steps, cron example, pre–go-live test checklist, and operational flows (concerts, Shopify links, test purchase, email, event day).
+- **Nginx:** example **`docs/nginx-example.conf`** (reverse proxy to the Node **`PORT`**).
+- **PM2:** example **`ecosystem.config.cjs`** at the repo root.

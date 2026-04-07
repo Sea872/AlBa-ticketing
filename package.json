@@ -12,7 +12,8 @@
     "dev": "node --watch src/server.js",
     "db:create": "node scripts/createDatabase.js",
     "migrate": "node scripts/runMigrations.js",
-    "seed": "node scripts/seedAdmin.js"
+    "seed": "node scripts/seedAdmin.js",
+    "backup": "node scripts/runBackup.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
