@@ -1,6 +1,6 @@
 # Concert ticketing backend (Alba GB)
 
-Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webhooks, tickets, QR email, admin APIs, and **check-in validation** (`POST /api/admin/check-in/scan`). A **mobile staff scan UI** remains post-MVP (see `draft-plan.md`).
+Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webhooks, tickets, QR email, admin APIs, check-in validation, and a **staff gate page** at **`/staff/check-in`** (camera QR + paste fallback). See `draft-plan.md` for future refinements.
 
 ## Conventions (project-wide)
 
@@ -299,7 +299,7 @@ Invoke-RestMethod -Method POST -Uri "http://localhost:8000/webhooks/shopify/orde
 
 ## Project layout
 
-See `draft-plan.md` for phased delivery. Folders under `src/` mirror that plan (`routes`, `services`, `db`, `webhooks`, `emails`, etc.). Check-in logic lives in **`src/services/checkInService.js`**. **`docs/`** holds `runbook.md` and `nginx-example.conf`; **`scripts/`** includes `runBackup.js`; **`backups/`** is the default output for `npm run backup` (ignored in git except `.gitkeep`).
+See `draft-plan.md` for phased delivery. Folders under `src/` mirror that plan (`routes`, `services`, `db`, `webhooks`, `emails`, etc.). Check-in logic lives in **`src/services/checkInService.js`**. **`public/staff-checkin.html`** is served at **`GET /staff/check-in`**. **`docs/`** holds `runbook.md` and `nginx-example.conf`; **`scripts/`** includes `runBackup.js`; **`backups/`** is the default output for `npm run backup` (ignored in git except `.gitkeep`).
 
 ## Environment
 
@@ -374,3 +374,12 @@ curl -s -X POST http://localhost:8000/api/admin/check-in/scan \
 3. Expect **`result":"valid"`** once; a second scan with the same payload returns **`already_used`**. Use a different **`concertId`** than the ticket’s concert to see **`wrong_event`**.
 
 **SQL:** `SELECT * FROM scan_logs ORDER BY scanned_at DESC LIMIT 10;`
+
+### Staff scan page (Phase 15)
+
+1. Open **`http://localhost:8000/staff/check-in`** (or your production origin, **HTTPS** recommended so the phone camera works).
+2. Sign in with the same admin credentials as **`POST /api/admin/login`**; the session token is kept in **`sessionStorage`** for that tab only.
+3. Choose the **concert at this gate**, then **Start camera** and point at a ticket QR, or paste the raw JSON into **Or paste QR JSON** and submit.
+4. The UI shows the **result** state (`valid`, `already_used`, `wrong_event`, `cancelled`, `invalid`). **Sign out** clears the token.
+
+The page loads **`html5-qrcode`** from **unpkg**; the device must be able to reach that CDN (or replace the script URL in a fork).

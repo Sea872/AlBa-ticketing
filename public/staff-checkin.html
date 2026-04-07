@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Staff check-in — Alba GB</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --neutral: #64748b;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      line-height: 1.45;
+    }
+    main { max-width: 28rem; margin: 0 auto; padding: 1rem 1rem 2rem; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem; }
+    p.sub { color: var(--muted); font-size: 0.875rem; margin: 0 0 1rem; }
+    label { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.35rem; }
+    input, select, button, textarea {
+      width: 100%;
+      padding: 0.75rem 0.85rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 1rem;
+    }
+    input:focus, select:focus, button:focus, textarea:focus {
+      outline: 2px solid #3b82f6;
+      outline-offset: 1px;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      border: none;
+      margin-top: 0.75rem;
+    }
+    button.primary { background: #2563eb; color: #fff; }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.ghost { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+    button.danger { background: transparent; color: var(--muted); font-weight: 500; font-size: 0.875rem; margin-top: 0.5rem; }
+    .stack > * + * { margin-top: 0.75rem; }
+    .hidden { display: none !important; }
+    #reader {
+      border-radius: 0.75rem;
+      overflow: hidden;
+      background: #000;
+      min-height: 12rem;
+    }
+    #reader video { border-radius: 0.75rem; }
+    .result {
+      margin-top: 1rem;
+      padding: 1rem 1.1rem;
+      border-radius: 0.75rem;
+      font-size: 1.125rem;
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+    .result.valid { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+    .result.already_used { background: rgba(100, 116, 139, 0.35); color: #cbd5e1; }
+    .result.wrong_event { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+    .result.cancelled { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+    .result.invalid { background: rgba(239, 68, 68, 0.25); color: #fecaca; }
+    .result.error { background: rgba(239, 68, 68, 0.2); color: #fecaca; font-size: 0.95rem; }
+    .row-btns { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .row-btns button { flex: 1; min-width: 8rem; margin-top: 0; }
+    textarea { min-height: 5rem; font-family: ui-monospace, monospace; font-size: 0.8rem; resize: vertical; }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.35rem; }
+    header { padding-bottom: 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Gate check-in</h1>
+      <p class="sub">Sign in, choose today’s concert, then scan ticket QR codes. HTTPS is required for the camera on most phones.</p>
+    </header>
+
+    <section id="loginSection" class="stack">
+      <div>
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" />
+      </div>
+      <div>
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" />
+      </div>
+      <button type="button" class="primary" id="btnLogin">Sign in</button>
+      <p id="loginError" class="result error hidden" role="alert"></p>
+    </section>
+
+    <section id="appSection" class="hidden">
+      <div class="stack">
+        <div>
+          <label for="concert">Concert at this gate</label>
+          <select id="concert"></select>
+          <p class="hint">Must match the show you are scanning for.</p>
+        </div>
+        <div class="row-btns">
+          <button type="button" class="primary" id="btnCamera">Start camera</button>
+          <button type="button" class="ghost" id="btnStop" disabled>Stop</button>
+        </div>
+        <div id="reader"></div>
+        <div>
+          <label for="manualQr">Or paste QR JSON</label>
+          <textarea id="manualQr" placeholder='{"schemaVersion":1,"ticketId":"…"}'></textarea>
+          <button type="button" class="ghost" id="btnManual">Submit pasted QR</button>
+        </div>
+        <button type="button" class="danger" id="btnLogout">Sign out</button>
+      </div>
+      <div id="result" class="result hidden" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const TOKEN_KEY = "staffCheckinToken";
+      const loginSection = document.getElementById("loginSection");
+      const appSection = document.getElementById("appSection");
+      const loginError = document.getElementById("loginError");
+      const email = document.getElementById("email");
+      const password = document.getElementById("password");
+      const btnLogin = document.getElementById("btnLogin");
+      const concertSelect = document.getElementById("concert");
+      const btnCamera = document.getElementById("btnCamera");
+      const btnStop = document.getElementById("btnStop");
+      const readerEl = document.getElementById("reader");
+      const manualQr = document.getElementById("manualQr");
+      const btnManual = document.getElementById("btnManual");
+      const btnLogout = document.getElementById("btnLogout");
+      const resultEl = document.getElementById("result");
+
+      let html5Qr = null;
+      let lastPayload = "";
+      let lastAt = 0;
+      const debounceMs = 2000;
+
+      function baseUrl() {
+        return window.location.origin;
+      }
+
+      function getToken() {
+        return sessionStorage.getItem(TOKEN_KEY);
+      }
+
+      function setToken(t) {
+        if (t) sessionStorage.setItem(TOKEN_KEY, t);
+        else sessionStorage.removeItem(TOKEN_KEY);
+      }
+
+      function authHeaders() {
+        const t = getToken();
+        return {
+          "Content-Type": "application/json",
+          Authorization: t ? "Bearer " + t : "",
+        };
+      }
+
+      function showResult(className, text) {
+        resultEl.className = "result " + className;
+        resultEl.textContent = text;
+        resultEl.classList.remove("hidden");
+        if (className === "valid" && navigator.vibrate) {
+          navigator.vibrate(80);
+        }
+      }
+
+      function hideResult() {
+        resultEl.classList.add("hidden");
+      }
+
+      async function apiLogin() {
+        loginError.classList.add("hidden");
+        btnLogin.disabled = true;
+        try {
+          const res = await fetch(baseUrl() + "/api/admin/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: email.value.trim(),
+              password: password.value,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.detail || data.error || "Login failed");
+          }
+          if (!data.token) throw new Error("No token in response");
+          setToken(data.token);
+          loginSection.classList.add("hidden");
+          appSection.classList.remove("hidden");
+          await loadConcerts();
+        } catch (e) {
+          loginError.textContent = e.message || String(e);
+          loginError.classList.remove("hidden");
+        } finally {
+          btnLogin.disabled = false;
+        }
+      }
+
+      async function loadConcerts() {
+        concertSelect.innerHTML = "";
+        const res = await fetch(baseUrl() + "/api/admin/concerts", { headers: authHeaders() });
+        if (res.status === 401) {
+          setToken(null);
+          appSection.classList.add("hidden");
+          loginSection.classList.remove("hidden");
+          showResult("error", "Session expired. Sign in again.");
+          return;
+        }
+        const data = await res.json();
+        const list = data.concerts || [];
+        if (list.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No concerts — create one in admin";
+          concertSelect.appendChild(opt);
+          return;
+        }
+        list.forEach(function (c) {
+          const opt = document.createElement("option");
+          opt.value = c.id;
+          const d = c.concertDate ? String(c.concertDate).slice(0, 10) : "";
+          opt.textContent = (c.name || "Concert") + (d ? " — " + d : "") + " (" + (c.status || "") + ")";
+          concertSelect.appendChild(opt);
+        });
+      }
+
+      async function submitScan(qrText) {
+        const concertId = concertSelect.value;
+        if (!concertId) {
+          showResult("error", "Select a concert first.");
+          return;
+        }
+        const now = Date.now();
+        if (qrText === lastPayload && now - lastAt < debounceMs) {
+          return;
+        }
+        lastPayload = qrText;
+        lastAt = now;
+
+        const res = await fetch(baseUrl() + "/api/admin/check-in/scan", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ concertId: concertId, qr: qrText }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          setToken(null);
+          appSection.classList.add("hidden");
+          loginSection.classList.remove("hidden");
+          showResult("error", "Session expired. Sign in again.");
+          return;
+        }
+        if (!res.ok) {
+          showResult("error", data.detail || data.error || "Request failed");
+          return;
+        }
+        const r = data.result || "unknown";
+        const labels = {
+          valid: "VALID — Welcome in",
+          already_used: "ALREADY USED",
+          wrong_event: "WRONG EVENT — Ticket is for another show",
+          cancelled: "CANCELLED",
+          invalid: "INVALID TICKET",
+        };
+        showResult(r, labels[r] || r.toUpperCase());
+      }
+
+      async function startCamera() {
+        if (typeof Html5Qrcode === "undefined") {
+          showResult("error", "QR library failed to load. Check network.");
+          return;
+        }
+        hideResult();
+        const concertId = concertSelect.value;
+        if (!concertId) {
+          showResult("error", "Select a concert first.");
+          return;
+        }
+        btnCamera.disabled = true;
+        try {
+          if (!html5Qr) {
+            html5Qr = new Html5Qrcode("reader");
+          }
+          await html5Qr.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 260, height: 260 } },
+            function (decodedText) {
+              submitScan(decodedText);
+            },
+            function () {}
+          );
+          btnStop.disabled = false;
+        } catch (e) {
+          showResult("error", (e && e.message) || "Could not start camera. Allow permission or use HTTPS.");
+          btnCamera.disabled = false;
+        }
+      }
+
+      async function stopCamera() {
+        if (html5Qr) {
+          try {
+            await html5Qr.stop();
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        btnStop.disabled = true;
+        btnCamera.disabled = false;
+      }
+
+      btnLogin.addEventListener("click", apiLogin);
+      btnCamera.addEventListener("click", startCamera);
+      btnStop.addEventListener("click", function () {
+        stopCamera();
+      });
+      btnManual.addEventListener("click", function () {
+        const t = manualQr.value.trim();
+        if (!t) {
+          showResult("error", "Paste QR JSON first.");
+          return;
+        }
+        submitScan(t);
+      });
+      btnLogout.addEventListener("click", function () {
+        stopCamera();
+        setToken(null);
+        appSection.classList.add("hidden");
+        loginSection.classList.remove("hidden");
+        hideResult();
+        manualQr.value = "";
+      });
+
+      if (getToken()) {
+        loginSection.classList.add("hidden");
+        appSection.classList.remove("hidden");
+        loadConcerts();
+      }
+    })();
+  </script>
+</body>
+</html>

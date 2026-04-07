@@ -152,7 +152,7 @@ If DB and files are from different nights, some QR files may be missing or extra
 
 ### Event day (MVP)
 
-- **Gate check-in:** **`POST /api/admin/check-in/scan`** with **`concertId`** (the show at this entrance) and **`qrPayload`** or **`qr`** (JSON string from the ticket QR). Use an admin JWT; responses include **`result`**: `valid`, `already_used`, `wrong_event`, `cancelled`, or `invalid`. Rows are recorded in **`scan_logs`**. A dedicated **browser scan UI** is optional (post-MVP); staff can paste payload JSON or use a generic QR reader that copies the string.
+- **Gate check-in:** **`POST /api/admin/check-in/scan`** with **`concertId`** (the show at this entrance) and **`qrPayload`** or **`qr`** (JSON string from the ticket QR). Use an admin JWT; responses include **`result`**: `valid`, `already_used`, `wrong_event`, `cancelled`, or `invalid`. Rows are recorded in **`scan_logs`**. A **browser UI** is available at **`https://<your-host>/staff/check-in`** (HTTPS helps **`getUserMedia`** on phones). It uses the same admin login and loads a QR reader from **unpkg**; see **`README.md`** (Phase 15).
 - Monitor app logs and Nginx error logs; **`GET /health`** for uptime checks.
 
 ## Testing checklist (pre–go-live)

@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { createHealthRouter } from "../routes/healthRoutes.js";
 import { createShopifyWebhookRouter } from "../routes/shopifyWebhookRoutes.js";
@@ -7,6 +9,9 @@ import { createAdminConcertRouter } from "../routes/adminConcertRoutes.js";
 import { createAdminTicketRouter } from "../routes/adminTicketRoutes.js";
 import { createAdminCheckinRouter } from "../routes/adminCheckinRoutes.js";
 import { registerErrorHandler } from "../middleware/errorHandler.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const staffCheckinHtmlPath = path.join(__dirname, "..", "..", "public", "staff-checkin.html");
 
 /**
  * Creates and configures the Express application (no listen).
@@ -29,6 +34,14 @@ export function createApp() {
   app.use("/api/admin/concerts", createAdminConcertRouter());
   app.use("/api/admin/tickets", createAdminTicketRouter());
   app.use("/api/admin/check-in", createAdminCheckinRouter());
+
+  app.get("/staff/check-in", (req, res, next) => {
+    res.sendFile(staffCheckinHtmlPath, (err) => {
+      if (err) {
+        next(err);
+      }
+    });
+  });
 
   app.use((req, res) => {
     res.status(404).json({ ok: false, error: "not_found" });
