@@ -189,6 +189,61 @@ Invoke-RestMethod -Method DELETE -Uri "$base/api/admin/concerts/$id/products/$li
 
 4. **Negative checks:** `POST` the same `shopifyProductId` twice → **`409`**. `PATCH` concert to `finished`, then `POST` a new link → **`400`** `concert_not_active`. Wrong `concertId` → **`404`**.
 
+### Shopify `orders/paid` webhook (Phase 8)
+
+- **URL to register in Shopify:** `https://tickets.albagb.com/webhooks/shopify/orders-paid` (or `http://localhost:8000/...` with a tunnel such as ngrok for local dev).
+- **Method:** `POST`, body: raw JSON order object (Shopify sends the full order).
+- **Headers:** `X-Shopify-Hmac-Sha256` (required), `X-Shopify-Topic: orders/paid` (optional; other topics are accepted with **`200`** and `ignored: true`).
+- **Env:** set **`SHOPIFY_WEBHOOK_SECRET`** (preferred) or **`SHOPIFY_API_SECRET`** to your app’s **API secret key** used to verify the HMAC.
+
+Behaviour: verifies HMAC → parses JSON → reads `id` (Shopify order id) → if already in **`processed_orders`**, returns **`200`** `{ duplicate: true }` (idempotent); otherwise inserts a row and returns **`200`** `{ processed: true }`. Invalid HMAC → **`401`** `invalid_hmac`. Phase 9 will add ticket creation around this flow.
+
+### Manual test guide (Shopify webhook)
+
+**Prerequisites:** `DATABASE_URL` set, migrations applied, **`SHOPIFY_WEBHOOK_SECRET`** (or **`SHOPIFY_API_SECRET`**) in `.env`, server running.
+
+**1. Compute HMAC (same string you send as the body bytes):**
+
+```bash
+export BODY='{"id":987654321}'
+export SECRET='paste_same_value_as_in_env'
+export HMAC=$(node -e "const c=require('crypto');const b=process.env.BODY;const s=process.env.SECRET;process.stdout.write(c.createHmac('sha256',s).update(b,'utf8').digest('base64'))")
+echo "$HMAC"
+```
+
+**2. POST the webhook (bash):**
+
+```bash
+curl -s -w "\nHTTP:%{http_code}\n" -X POST "http://localhost:8000/webhooks/shopify/orders-paid" \
+  -H "Content-Type: application/json" \
+  -H "X-Shopify-Hmac-Sha256: $HMAC" \
+  -H "X-Shopify-Topic: orders/paid" \
+  -d "$BODY"
+```
+
+Expect **`200`** and `"processed":true`. Run the same `curl` again → **`200`** and `"duplicate":true`.
+
+**3. Negative checks**
+
+| Check | Expected |
+|--------|----------|
+| Wrong HMAC | **`401`**, `invalid_hmac` |
+| Body not valid JSON | **`400`** |
+| Missing `id` on order | **`400`** |
+| Wrong `X-Shopify-Topic` (e.g. `orders/cancelled`) | **`200`**, `ignored: true` |
+
+**PowerShell:** set `$BODY`, `$SECRET`, then:
+
+```powershell
+$hmac = [Convert]::ToBase64String(
+  [System.Security.Cryptography.HMACSHA256]::new([Text.Encoding]::UTF8.GetBytes($SECRET)).ComputeHash([Text.Encoding]::UTF8.GetBytes($BODY))
+)
+Invoke-RestMethod -Method POST -Uri "http://localhost:8000/webhooks/shopify/orders-paid" `
+  -ContentType "application/json" `
+  -Headers @{ "X-Shopify-Hmac-Sha256" = $hmac; "X-Shopify-Topic" = "orders/paid" } `
+  -Body $BODY
+```
+
 ## Database
 
 - The PostgreSQL **server** must exist and your user must be allowed to `CREATE DATABASE`. The app database itself is created with `npm run db:create` (or `createdb`) before `npm run migrate` — migrations cannot create the empty database because nothing can connect to it yet.
