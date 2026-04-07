@@ -10,6 +10,7 @@ import {
   insertProcessedOrder,
 } from "../db/repositories/processedOrdersRepository.js";
 import { buildQrPayloadForTicket, writeTicketQrPng } from "./ticketQrService.js";
+import { sendOrderTicketEmail } from "./ticketEmailService.js";
 import { extractShopifyOrderIdFromPayload } from "../utils/shopifyOrderPayload.js";
 import { logInfo, logWarn } from "../utils/logger.js";
 
@@ -58,6 +59,8 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
   const client = await pool.connect();
   /** @type {string[]} */
   const writtenQrFiles = [];
+  /** @type {{ ticketId: string, concertId: string, absolutePath: string, ticketIndex: number }[]} */
+  const ticketsForEmail = [];
 
   try {
     await client.query("BEGIN");
@@ -154,6 +157,12 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
         const { absolutePath, relativePath } = await writeTicketQrPng(ticketId, finalPayload);
         writtenQrFiles.push(absolutePath);
         await updateTicketQrAssignment(ticketId, finalPayload, relativePath, client);
+        ticketsForEmail.push({
+          ticketId,
+          concertId,
+          absolutePath,
+          ticketIndex: t,
+        });
         ticketsCreated += 1;
       }
     }
@@ -168,7 +177,30 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
       shopDomain: meta.shopDomain ?? null,
     });
 
-    return { processed: true, shopifyOrderId, ticketsCreated };
+    /** @type {Record<string, unknown>} */
+    const emailOutcome = {};
+    if (ticketsForEmail.length > 0) {
+      const emailResult = await sendOrderTicketEmail({
+        shopifyOrderId,
+        customerEmail,
+        tickets: ticketsForEmail,
+      });
+      if (emailResult.skipped) {
+        emailOutcome.emailSkipped = true;
+      } else if (emailResult.sent) {
+        emailOutcome.emailSent = true;
+        if (emailResult.providerId) {
+          emailOutcome.emailProviderId = emailResult.providerId;
+        }
+      } else {
+        emailOutcome.emailSent = false;
+        if (emailResult.error) {
+          emailOutcome.emailError = emailResult.error;
+        }
+      }
+    }
+
+    return { processed: true, shopifyOrderId, ticketsCreated, ...emailOutcome };
   } catch (err) {
     await client.query("ROLLBACK");
     for (const filePath of writtenQrFiles) {

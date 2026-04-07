@@ -29,6 +29,10 @@ export function loadConfig() {
     process.env.TICKET_STORAGE_DIR ?? defaultTicketStorageDir
   );
 
+  const resendApiKey = process.env.RESEND_API_KEY ?? null;
+  const resendFromEmail =
+    process.env.RESEND_FROM ?? "Alba GB <onboarding@resend.dev>";
+
   return {
     nodeEnv: nodeEnv,
     port: Number.isFinite(port) && port > 0 ? port : defaultPort,
@@ -38,5 +42,7 @@ export function loadConfig() {
     jwtExpiresIn,
     shopifyWebhookSecret,
     ticketStorageDir,
+    resendApiKey,
+    resendFromEmail,
   };
 }

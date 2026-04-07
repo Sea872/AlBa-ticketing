@@ -85,5 +85,17 @@ export async function handleOrdersPaidWebhook(req, res) {
   if (result.skippedReason) {
     body.skippedReason = result.skippedReason;
   }
+  if ("emailSent" in result) {
+    body.emailSent = result.emailSent;
+  }
+  if ("emailSkipped" in result) {
+    body.emailSkipped = result.emailSkipped;
+  }
+  if (result.emailError) {
+    body.emailError = result.emailError;
+  }
+  if (result.emailProviderId) {
+    body.emailProviderId = result.emailProviderId;
+  }
   res.status(200).json(body);
 }

@@ -63,3 +63,42 @@ export async function updateTicketQrAssignment(ticketId, qrPayload, qrFilePath, 
     [JSON.stringify(qrPayload), qrFilePath, ticketId]
   );
 }
+
+/**
+ * @param {string[]} ticketIds
+ * @param {{ sentAt: Date, providerId: string | null }} meta
+ */
+export async function markTicketsEmailSuccess(ticketIds, meta, client = null) {
+  if (ticketIds.length === 0) {
+    return;
+  }
+  const executor = client ?? getPool();
+  await executor.query(
+    `UPDATE ticket_assignments
+     SET email_sent_at = $2::timestamptz,
+         email_provider_id = $3,
+         email_last_error = NULL,
+         updated_at = now()
+     WHERE id = ANY($1::uuid[])`,
+    [ticketIds, meta.sentAt, meta.providerId]
+  );
+}
+
+/**
+ * @param {string[]} ticketIds
+ * @param {string} errorMessage
+ */
+export async function markTicketsEmailFailure(ticketIds, errorMessage, client = null) {
+  if (ticketIds.length === 0) {
+    return;
+  }
+  const executor = client ?? getPool();
+  const msg = String(errorMessage).slice(0, 2000);
+  await executor.query(
+    `UPDATE ticket_assignments
+     SET email_last_error = $2,
+         updated_at = now()
+     WHERE id = ANY($1::uuid[])`,
+    [ticketIds, msg]
+  );
+}

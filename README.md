@@ -272,7 +272,7 @@ Invoke-RestMethod -Method POST -Uri "http://localhost:8000/webhooks/shopify/orde
 ## Database
 
 - The PostgreSQL **server** must exist and your user must be allowed to `CREATE DATABASE`. The app database itself is created with `npm run db:create` (or `createdb`) before `npm run migrate` — migrations cannot create the empty database because nothing can connect to it yet.
-- SQL migrations live in `src/db/migrations/` and are applied in filename order by `npm run migrate`.
+- SQL migrations live in `src/db/migrations/` and are applied in filename order by `npm run migrate` (includes email columns on `ticket_assignments` for Resend).
 - Applied versions are recorded in table `schema_migrations`.
 - App code should use `getPool()` from `src/db/client/pool.js` (requires `DATABASE_URL`).
 - `concerts.concert_date` stores the show date (PostgreSQL `date` type); other tables match `draft-plan.md` (`ticket_assignments`, `scan_logs`, etc.).
@@ -294,3 +294,13 @@ ls storage/tickets/*.png
 ```
 
 Open a PNG with an image viewer; the QR should decode to JSON containing `ticketId` and `concertId`. If the DB transaction rolls back after a QR write, the app attempts to delete those PNGs (best-effort).
+
+### Ticket email (Resend, Phase 11)
+
+1. Run **`npm run migrate`** so `002_ticket_email_columns.sql` adds **`email_sent_at`**, **`email_last_error`**, **`email_provider_id`** on **`ticket_assignments`**.
+2. Set **`RESEND_API_KEY`** in `.env` (from [Resend](https://resend.com/api-keys)). For first tests, **`RESEND_FROM`** can stay default **`Alba GB <onboarding@resend.dev>`** and **`to`** must be an address you can receive (Resend test limits apply).
+3. Trigger a webhook that creates at least one ticket (same flow as §3). The JSON response should include **`emailSent": true`** and **`emailProviderId`** when send succeeds.
+4. If **`RESEND_API_KEY`** is unset, the response includes **`emailSkipped": true`** and tickets are still created; **`email_sent_at`** stays null.
+5. On failure, **`emailSent": false`** and **`emailError`** appear; DB rows get **`email_last_error`**.
+
+**SQL:** `SELECT email_sent_at, email_last_error, email_provider_id FROM ticket_assignments ORDER BY created_at DESC LIMIT 3;`
