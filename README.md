@@ -112,6 +112,18 @@ All routes need `Authorization: Bearer <token>`.
 
 `status` must be one of: `active`, `finished`, `cancelled`.
 
+### Shopify product links (admin, JWT required)
+
+Link Shopify **product** IDs to a concert so webhooks can match line items later. **New links are only allowed while the concert is `active`.** Removing a link is allowed regardless of concert status.
+
+| Method | Path | Body (JSON) |
+|--------|------|-------------|
+| `GET` | `/api/admin/concerts/:concertId/products` | — |
+| `POST` | `/api/admin/concerts/:concertId/products` | `{ "shopifyProductId" }` (number or string; use `"string"` for very large ids) |
+| `DELETE` | `/api/admin/concerts/:concertId/products/:linkId` | — (`linkId` is the UUID row id from `GET`) |
+
+Duplicate `(concert, shopify_product_id)` returns **`409`** with `duplicate_link`. Inactive concert returns **`400`** with `concert_not_active`.
+
 ### Manual test guide (concerts)
 
 With the server running (`npm run dev`), set shell variables (PowerShell examples):
@@ -149,6 +161,33 @@ curl -s -X POST "$BASE/api/admin/concerts" -H "Authorization: Bearer $TOKEN" -H 
 ```
 
 Expect `401` with no/invalid token; `400` for invalid JSON body or bad date; `404` for unknown concert id.
+
+### Manual test guide (Shopify product links)
+
+1. Complete **login** and create an **`active`** concert (see above); set `$id` / `$TOKEN` / `$h` / `$BASE`.
+2. Link a Shopify product id (use a real id from your Shopify admin when integrated; for smoke tests use a fake numeric id like `123456789`):
+
+```powershell
+$linkBody = '{"shopifyProductId":123456789}'
+Invoke-RestMethod -Method POST -Uri "$base/api/admin/concerts/$id/products" -Headers $h -ContentType "application/json" -Body $linkBody
+
+Invoke-RestMethod -Uri "$base/api/admin/concerts/$id/products" -Headers $h
+```
+
+```bash
+curl -s -X POST "$BASE/api/admin/concerts/$CONCERT_ID/products" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"shopifyProductId":"123456789"}'
+curl -s "$BASE/api/admin/concerts/$CONCERT_ID/products" -H "Authorization: Bearer $TOKEN"
+```
+
+3. Copy a link `id` from the list response, then delete:
+
+```powershell
+$linkId = "PASTE_LINK_UUID"
+Invoke-RestMethod -Method DELETE -Uri "$base/api/admin/concerts/$id/products/$linkId" -Headers $h
+```
+
+4. **Negative checks:** `POST` the same `shopifyProductId` twice → **`409`**. `PATCH` concert to `finished`, then `POST` a new link → **`400`** `concert_not_active`. Wrong `concertId` → **`404`**.
 
 ## Database
 

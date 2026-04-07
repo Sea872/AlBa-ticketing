@@ -5,26 +5,12 @@ import {
   updateConcert as updateConcertRepo,
 } from "../db/repositories/concertsRepository.js";
 import { HttpError } from "../utils/httpError.js";
+import { assertUuidParam } from "../utils/uuid.js";
 
 const allowedStatuses = new Set(["active", "finished", "cancelled"]);
 
 const maxNameLen = 500;
 const maxVenueLen = 500;
-
-function isUuid(value) {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value
-    )
-  );
-}
-
-function assertUuidParam(id, label) {
-  if (!isUuid(id)) {
-    throw new HttpError(400, `invalid ${label}`, { expose: true, code: "validation_error" });
-  }
-}
 
 function trimNonEmptyString(value, fieldName, maxLen) {
   if (value === undefined || value === null) {
