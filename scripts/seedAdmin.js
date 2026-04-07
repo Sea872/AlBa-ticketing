@@ -16,7 +16,9 @@ async function run() {
     process.exit(1);
   }
 
-  const email = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
+  const email = String(process.env.SEED_ADMIN_EMAIL ?? "admin@example.com")
+    .trim()
+    .toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? "changeme";
 
   if (process.env.NODE_ENV === "production" && !process.env.SEED_ADMIN_PASSWORD) {

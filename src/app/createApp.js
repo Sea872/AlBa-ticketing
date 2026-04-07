@@ -1,5 +1,6 @@
 import express from "express";
 import { createHealthRouter } from "../routes/healthRoutes.js";
+import { createAdminAuthRouter } from "../routes/adminAuthRoutes.js";
 import { registerErrorHandler } from "../middleware/errorHandler.js";
 
 /**
@@ -13,6 +14,7 @@ export function createApp() {
   app.use(express.json({ limit: "1mb" }));
 
   app.use(createHealthRouter());
+  app.use("/api/admin", createAdminAuthRouter());
 
   app.use((req, res) => {
     res.status(404).json({ ok: false, error: "not_found" });
