@@ -211,7 +211,8 @@ Invoke-RestMethod -Method DELETE -Uri "$base/api/admin/concerts/$id/products/$li
 
 ### Shopify `orders/paid` webhook (Phase 8)
 
-- **URL to register in Shopify:** `https://tickets.albagb.com/webhooks/shopify/orders-paid` (or `http://localhost:8000/...` with a tunnel such as ngrok for local dev).
+- **Shopify storefront:** [https://albaguitarbeads.com/](https://albaguitarbeads.com/) (ticket products and checkout live here).
+- **URL to register in Shopify** (must hit **this backend**, not the storefront): `https://<your-backend-host>/webhooks/shopify/orders-paid` — e.g. production VPS hostname, or `http://localhost:8000/...` with a tunnel such as ngrok for local dev.
 - **Method:** `POST`, body: raw JSON order object (Shopify sends the full order).
 - **Headers:** `X-Shopify-Hmac-Sha256` (required), `X-Shopify-Topic: orders/paid` (optional; other topics are accepted with **`200`** and `ignored: true`).
 - **Env:** set **`SHOPIFY_WEBHOOK_SECRET`** (preferred) or **`SHOPIFY_API_SECRET`** to your app’s **API secret key** used to verify the HMAC.
@@ -303,7 +304,7 @@ See `draft-plan.md` for phased delivery. Folders under `src/` mirror that plan (
 
 ## Environment
 
-See `.env.example` for variables used as features land (database, Shopify, Resend, JWT, ticket storage).
+See `.env.example` for variables used as features land (database, Shopify, Resend, JWT, ticket storage). For **preparation**, **Shopify webhook URL and secret**, and an **ordered test checklist**, see **`guide.md`**.
 
 ### Manual test guide (QR files)
 

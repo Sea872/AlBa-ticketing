@@ -21,7 +21,7 @@ Optional: `SEED_*` (local seed only), `POSTGRES_ADMIN_DATABASE` (for `npm run db
 
 ## VPS deployment (Ubuntu + Nginx + PM2)
 
-Assumptions: Node 18+, PostgreSQL, Git clone of this repo, DNS for `tickets.albagb.com` pointing at the VPS.
+Assumptions: Node 18+, PostgreSQL, Git clone of this repo, DNS for **your backend host** (the server running this app) pointing at the VPS. The Shopify storefront is [https://albaguitarbeads.com/](https://albaguitarbeads.com/); that is separate from the hostname you use for webhooks and admin API unless you intentionally serve this app on the same domain.
 
 1. **Install system dependencies**
 
@@ -65,7 +65,7 @@ Assumptions: Node 18+, PostgreSQL, Git clone of this repo, DNS for `tickets.alba
 
 7. **TLS** — typically via Cloudflare or Let’s Encrypt in front of Nginx; ensure HTTPS for public URLs and Shopify webhooks.
 
-8. **Shopify** — register the webhook URL `https://tickets.albagb.com/webhooks/shopify/orders-paid` (or your host) with the same signing secret as in **`.env`**.
+8. **Shopify** — register the webhook URL `https://<your-backend-host>/webhooks/shopify/orders-paid` with the same signing secret as in **`.env`**. (Storefront: [albaguitarbeads.com](https://albaguitarbeads.com/).)
 
 ## Backups
 

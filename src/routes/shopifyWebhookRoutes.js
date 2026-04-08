@@ -7,7 +7,6 @@ import { handleOrdersPaidWebhook } from "../services/shopifyWebhookService.js";
  */
 export function createShopifyWebhookRouter() {
   const router = express.Router();
-
   const rawJson = express.raw({
     type: (req) => {
       const t = req.headers["content-type"] ?? "";

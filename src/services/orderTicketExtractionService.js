@@ -12,7 +12,7 @@ import {
 import { buildQrPayloadForTicket, writeTicketQrPng } from "./ticketQrService.js";
 import { sendOrderTicketEmail } from "./ticketEmailService.js";
 import { extractShopifyOrderIdFromPayload } from "../utils/shopifyOrderPayload.js";
-import { logInfo, logWarn } from "../utils/logger.js";
+import { logDebug, logError, logInfo, logWarn } from "../utils/logger.js";
 
 export function buildPreliminaryQrPayload({ concertId, shopifyOrderId, shopifyLineItemId, ticketIndex }) {
   return {
@@ -51,9 +51,17 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
       shopifyOrderId,
       topic: meta.topic ?? null,
       shopDomain: meta.shopDomain ?? null,
+      webhookId: meta.webhookId ?? null,
     });
     return { duplicate: true, shopifyOrderId, ticketsCreated: 0 };
   }
+
+  logDebug("shopify orders/paid processing started", {
+    shopifyOrderId,
+    shopDomain: meta.shopDomain ?? null,
+    webhookId: meta.webhookId ?? null,
+    eventId: meta.eventId ?? null,
+  });
 
   const pool = getPool();
   const client = await pool.connect();
@@ -77,6 +85,8 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
     if (!customerEmail) {
       logWarn("orders/paid missing customer email; recording processed without tickets", {
         shopifyOrderId,
+        shopDomain: meta.shopDomain ?? null,
+        webhookId: meta.webhookId ?? null,
       });
       await insertProcessedOrder(shopifyOrderId, client);
       await client.query("COMMIT");
@@ -91,9 +101,15 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
     const lineItems = parseLineItems(payload);
     let ticketsCreated = 0;
 
+    logDebug("orders/paid line items", {
+      shopifyOrderId,
+      lineItemCount: lineItems.length,
+    });
+
     for (const li of lineItems) {
       const productId = li?.product_id;
       if (productId === null || productId === undefined) {
+        logDebug("orders/paid line item skipped: no product_id", { shopifyOrderId });
         continue;
       }
       const pid =
@@ -101,13 +117,21 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
           ? String(Math.trunc(productId))
           : String(productId).trim();
       if (!/^\d+$/.test(pid)) {
+        logDebug("orders/paid line item skipped: invalid product_id", { shopifyOrderId, productId: pid });
         continue;
       }
 
       const concertId = await findActiveConcertIdForShopifyProduct(pid, client);
       if (!concertId) {
+        logDebug("orders/paid no active concert link for product", { shopifyOrderId, shopifyProductId: pid });
         continue;
       }
+
+      logDebug("orders/paid matched concert for product", {
+        shopifyOrderId,
+        shopifyProductId: pid,
+        concertId,
+      });
 
       const lineItemId = li?.id;
       if (lineItemId === null || lineItemId === undefined) {
@@ -170,12 +194,22 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
     await insertProcessedOrder(shopifyOrderId, client);
     await client.query("COMMIT");
 
-    logInfo("shopify orders/paid processed", {
-      shopifyOrderId,
-      ticketsCreated,
-      topic: meta.topic ?? null,
-      shopDomain: meta.shopDomain ?? null,
-    });
+    if (ticketsCreated === 0) {
+      const productIds = lineItems
+        .map((li) => li?.product_id)
+        .filter((id) => id !== null && id !== undefined)
+        .map((id) =>
+          typeof id === "number" && Number.isFinite(id) ? String(Math.trunc(id)) : String(id).trim()
+        )
+        .filter((s) => /^\d+$/.test(s));
+      const uniqueProducts = [...new Set(productIds)].slice(0, 30);
+      logWarn("orders/paid committed with zero tickets (check concert_products links and concert status)", {
+        shopifyOrderId,
+        shopDomain: meta.shopDomain ?? null,
+        lineItemCount: lineItems.length,
+        distinctProductIdsInPayload: uniqueProducts,
+      });
+    }
 
     /** @type {Record<string, unknown>} */
     const emailOutcome = {};
@@ -200,6 +234,19 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
       }
     }
 
+    logInfo("shopify orders/paid completed", {
+      shopifyOrderId,
+      ticketsCreated,
+      topic: meta.topic ?? null,
+      shopDomain: meta.shopDomain ?? null,
+      webhookId: meta.webhookId ?? null,
+      eventId: meta.eventId ?? null,
+      customerEmailDomain: customerEmail.includes("@")
+        ? customerEmail.slice(customerEmail.indexOf("@"))
+        : null,
+      ...emailOutcome,
+    });
+
     return { processed: true, shopifyOrderId, ticketsCreated, ...emailOutcome };
   } catch (err) {
     await client.query("ROLLBACK");
@@ -211,9 +258,20 @@ export async function processOrdersPaidWithTickets(payload, meta = {}) {
       }
     }
     if (err && err.code === "23505") {
-      logInfo("shopify orders/paid duplicate (constraint)", { shopifyOrderId });
+      logInfo("shopify orders/paid duplicate (constraint)", {
+        shopifyOrderId,
+        shopDomain: meta.shopDomain ?? null,
+        webhookId: meta.webhookId ?? null,
+      });
       return { duplicate: true, shopifyOrderId, ticketsCreated: 0 };
     }
+    logError("shopify orders/paid transaction failed", {
+      shopifyOrderId,
+      shopDomain: meta.shopDomain ?? null,
+      webhookId: meta.webhookId ?? null,
+      pgCode: err?.code,
+      message: err?.message ?? String(err),
+    });
     throw err;
   } finally {
     client.release();

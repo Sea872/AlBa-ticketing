@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { loadConfig } from "../config.js";
 import { processOrdersPaidWithTickets } from "./orderTicketExtractionService.js";
 import { HttpError } from "../utils/httpError.js";
-import { logWarn } from "../utils/logger.js";
+import { logDebug, logError, logWarn } from "../utils/logger.js";
 
 const ordersPaidTopic = "orders/paid";
 
@@ -30,9 +30,17 @@ export function verifyShopifyWebhookHmac(rawBodyBuffer, receivedHmacHeader, secr
  * Express handler: expects `express.raw` body (Buffer) for HMAC verification.
  */
 export async function handleOrdersPaidWebhook(req, res) {
+  const webhookId = req.get("X-Shopify-Webhook-Id") ?? null;
+  const eventId = req.get("X-Shopify-Event-Id") ?? null;
+  const shopDomain = req.get("X-Shopify-Shop-Domain") ?? null;
+  const apiVersion = req.get("X-Shopify-Api-Version") ?? null;
+
   const { shopifyWebhookSecret } = loadConfig();
   if (!shopifyWebhookSecret) {
-    logWarn("SHOPIFY_WEBHOOK_SECRET / SHOPIFY_API_SECRET not set; rejecting webhook");
+    logWarn("shopify webhook rejected: secret not configured", {
+      shopDomain,
+      webhookId,
+    });
     throw new HttpError(500, "Shopify webhook secret not configured", {
       code: "server_misconfigured",
     });
@@ -40,38 +48,90 @@ export async function handleOrdersPaidWebhook(req, res) {
 
   const raw = req.body;
   if (!Buffer.isBuffer(raw)) {
+    logWarn("shopify webhook bad body type", {
+      shopDomain,
+      webhookId,
+      bodyType: raw === null || raw === undefined ? String(raw) : typeof raw,
+    });
     throw new HttpError(400, "expected raw body buffer", { code: "invalid_payload" });
   }
 
   const hmacHeader = req.get("X-Shopify-Hmac-Sha256");
   if (!verifyShopifyWebhookHmac(raw, hmacHeader, shopifyWebhookSecret)) {
-    logWarn("shopify webhook HMAC verification failed");
+    logWarn("shopify webhook HMAC verification failed", {
+      shopDomain,
+      webhookId,
+      bodyBytes: raw.length,
+      hasHmacHeader: Boolean(hmacHeader && String(hmacHeader).trim()),
+    });
     throw new HttpError(401, "invalid HMAC", { code: "invalid_hmac" });
   }
 
   let payload;
   try {
     payload = JSON.parse(raw.toString("utf8"));
-  } catch {
+  } catch (parseErr) {
+    logWarn("shopify webhook JSON parse failed", {
+      shopDomain,
+      webhookId,
+      bodyBytes: raw.length,
+      message: parseErr?.message ?? String(parseErr),
+    });
     throw new HttpError(400, "invalid JSON body", { code: "invalid_payload" });
   }
 
   const topicHeader = req.get("X-Shopify-Topic");
   const topic = topicHeader ? String(topicHeader).trim().toLowerCase() : "";
   if (topic && topic !== ordersPaidTopic) {
-    logWarn("shopify webhook unexpected topic", { topic: topicHeader });
+    logWarn("shopify webhook ignored: unexpected topic", {
+      topic: topicHeader,
+      shopDomain,
+      webhookId,
+    });
     res.status(200).json({ ok: true, ignored: true, reason: "unexpected_topic" });
     return;
   }
 
-  const shopDomain = req.get("X-Shopify-Shop-Domain") ?? null;
+  const orderIdForLog =
+    payload && typeof payload === "object" && payload.id !== undefined && payload.id !== null
+      ? String(payload.id)
+      : null;
 
-  const result = await processOrdersPaidWithTickets(payload, {
-    topic: topicHeader ?? ordersPaidTopic,
+  logDebug("shopify webhook orders/paid accepted", {
     shopDomain,
+    webhookId,
+    eventId,
+    apiVersion,
+    bodyBytes: raw.length,
+    orderId: orderIdForLog,
   });
 
+  let result;
+  try {
+    result = await processOrdersPaidWithTickets(payload, {
+      topic: topicHeader ?? ordersPaidTopic,
+      shopDomain,
+      webhookId,
+      eventId,
+    });
+  } catch (err) {
+    logError("shopify webhook handler failed", {
+      shopDomain,
+      webhookId,
+      eventId,
+      orderId: orderIdForLog,
+      message: err?.message ?? String(err),
+      code: err?.code,
+    });
+    throw err;
+  }
+
   if (result.duplicate) {
+    logDebug("shopify webhook response: duplicate", {
+      shopifyOrderId: result.shopifyOrderId,
+      shopDomain,
+      webhookId,
+    });
     res.status(200).json({ ok: true, duplicate: true, shopifyOrderId: result.shopifyOrderId });
     return;
   }
