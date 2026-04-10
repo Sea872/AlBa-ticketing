@@ -7,13 +7,7 @@ import { handleOrdersPaidWebhook } from "../services/shopifyWebhookService.js";
  */
 export function createShopifyWebhookRouter() {
   const router = express.Router();
-  const rawJson = express.raw({
-    type: (req) => {
-      const t = req.headers["content-type"] ?? "";
-      return t.includes("application/json");
-    },
-    limit: "5mb",
-  });
+  const rawJson = express.raw({ type: "*/*", limit: "5mb" });
 
   router.post(
     "/shopify/orders-paid",

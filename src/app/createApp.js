@@ -32,7 +32,7 @@ export function createApp() {
 
   app.use(createHealthRouter());
   app.use("/api/admin", createAdminAuthRouter());
-  // Register before generic /api/admin/concerts so "products" is not captured as :concertId
+
   app.use("/api/admin/concerts/:concertId/products", createAdminConcertProductRouter());
   app.use("/api/admin/concerts", createAdminConcertRouter());
   app.use("/api/admin/tickets", createAdminTicketRouter());

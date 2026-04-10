@@ -21,8 +21,11 @@ export function loadConfig() {
     process.env.JWT_SECRET ?? (nodeEnv !== "production" ? devJwtSecret : null);
   const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? "7d";
 
-  const shopifyWebhookSecret =
-    process.env.SHOPIFY_WEBHOOK_SECRET ?? process.env.SHOPIFY_API_SECRET ?? null;
+  const shopifyClientId = process.env.SHOPIFY_CLIENT_ID ?? null;
+  const shopifyClientSecret = process.env.SHOPIFY_CLIENT_SECRET ?? null;
+  const shopifyShopDomain = process.env.SHOPIFY_SHOP_DOMAIN ?? null;
+
+  const shopifyWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET ?? null;
 
   const ticketStorageDir = path.resolve(
     process.cwd(),
@@ -41,6 +44,9 @@ export function loadConfig() {
     jwtSecret,
     jwtExpiresIn,
     shopifyWebhookSecret,
+    shopifyClientId,
+    shopifyClientSecret,
+    shopifyShopDomain,
     ticketStorageDir,
     resendApiKey,
     resendFromEmail,
