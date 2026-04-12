@@ -8,11 +8,14 @@ import { createAdminAuthRouter } from "../routes/adminAuthRoutes.js";
 import { createAdminConcertProductRouter } from "../routes/adminConcertProductRoutes.js";
 import { createAdminConcertRouter } from "../routes/adminConcertRoutes.js";
 import { createAdminTicketRouter } from "../routes/adminTicketRoutes.js";
+import { createAdminDashboardRouter } from "../routes/adminDashboardRoutes.js";
 import { createAdminCheckinRouter } from "../routes/adminCheckinRoutes.js";
 import { registerErrorHandler } from "../middleware/errorHandler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const staffCheckinHtmlPath = path.join(__dirname, "..", "..", "public", "staff-checkin.html");
+const projectPublic = path.join(__dirname, "..", "..", "public");
+const staffCheckinHtmlPath = path.join(projectPublic, "staff-checkin.html");
+const adminStaticDir = path.join(projectPublic, "admin");
 
 /**
  * Creates and configures the Express application (no listen).
@@ -35,6 +38,7 @@ export function createApp() {
 
   app.use("/api/admin/concerts/:concertId/products", createAdminConcertProductRouter());
   app.use("/api/admin/concerts", createAdminConcertRouter());
+  app.use("/api/admin/dashboard", createAdminDashboardRouter());
   app.use("/api/admin/tickets", createAdminTicketRouter());
   app.use("/api/admin/check-in", createAdminCheckinRouter());
 
@@ -45,6 +49,14 @@ export function createApp() {
       }
     });
   });
+
+  app.get("/admin", (_req, res) => {
+    res.redirect(302, "/admin/login.html");
+  });
+  // app.get("/admin/", (_req, res) => {
+  //   res.redirect(302, "/admin/login.html");
+  // });
+  app.use("/admin", express.static(adminStaticDir, { index: false }));
 
   app.use((req, res) => {
     res.status(404).json({ ok: false, error: "not_found" });

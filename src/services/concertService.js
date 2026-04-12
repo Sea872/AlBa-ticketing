@@ -4,6 +4,7 @@ import {
   insertConcert,
   updateConcert as updateConcertRepo,
 } from "../db/repositories/concertsRepository.js";
+import { listTicketAssignmentsByConcertId } from "../db/repositories/ticketAssignmentsRepository.js";
 import { HttpError } from "../utils/httpError.js";
 import { assertUuidParam } from "../utils/uuid.js";
 
@@ -75,12 +76,20 @@ export function mapConcertRow(row) {
   const d = row.concert_date;
   const concertDate =
     d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+  const linkedProductCount =
+    row.linked_product_count != null ? Number(row.linked_product_count) : 0;
+  const ticketCount = row.ticket_count != null ? Number(row.ticket_count) : 0;
+  const readyForSales = row.status === "active" && linkedProductCount > 0;
   return {
     id: row.id,
     name: row.name,
     concertDate,
     venue: row.venue,
     status: row.status,
+    linkedProductCount,
+    ticketCount,
+    /** Active concert with at least one Shopify product linked (can receive ticket orders). */
+    readyForSales,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -107,6 +116,39 @@ export async function getConcertForAdmin(concertId) {
   return mapConcertRow(row);
 }
 
+function mapTicketRow(row) {
+  if (!row) {
+    return null;
+  }
+  const sent = row.email_sent_at;
+  return {
+    id: row.id,
+    concertId: row.concert_id,
+    shopifyOrderId: String(row.shopify_order_id),
+    shopifyLineItemId: String(row.shopify_line_item_id),
+    customerEmail: row.customer_email,
+    ticketIndex: row.ticket_index,
+    status: row.status,
+    qrFilePath: row.qr_file_path,
+    emailSentAt: sent instanceof Date ? sent.toISOString() : sent ? String(sent) : null,
+    emailLastError: row.email_last_error ?? null,
+    emailProviderId: row.email_provider_id ?? null,
+    emailResendCount: row.email_resend_count ?? 0,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+/** Issued tickets for a concert (admin monitor / resend UI). */
+export async function listTicketsForConcertAdmin(concertId) {
+  assertUuidParam(concertId, "concert id");
+  const concert = await findConcertById(concertId);
+  if (!concert) {
+    throw new HttpError(404, "concert not found", { code: "not_found" });
+  }
+  const rows = await listTicketAssignmentsByConcertId(concertId);
+  return rows.map(mapTicketRow);
+}
+
 export async function createConcertForAdmin(body) {
   const name = trimNonEmptyString(body?.name, "name", maxNameLen);
   const concertDate = parseConcertDateString(body?.concertDate, "concertDate");
@@ -114,7 +156,8 @@ export async function createConcertForAdmin(body) {
   const status = parseStatus(body?.status, { required: false, defaultValue: "active" });
 
   const row = await insertConcert({ name, concertDate, venue, status });
-  return mapConcertRow(row);
+  const full = await findConcertById(row.id);
+  return mapConcertRow(full);
 }
 
 export async function updateConcertForAdmin(concertId, body) {
@@ -147,5 +190,6 @@ export async function updateConcertForAdmin(concertId, body) {
   if (!row) {
     throw new HttpError(404, "concert not found", { code: "not_found" });
   }
-  return mapConcertRow(row);
+  const full = await findConcertById(concertId);
+  return mapConcertRow(full);
 }

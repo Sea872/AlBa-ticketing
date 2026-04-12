@@ -16,10 +16,12 @@ export async function listConcerts(filters = {}) {
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const res = await pool.query(
-    `SELECT id, name, concert_date, venue, status, created_at, updated_at
-     FROM concerts
+    `SELECT c.id, c.name, c.concert_date, c.venue, c.status, c.created_at, c.updated_at,
+            (SELECT COUNT(*)::int FROM concert_products cp WHERE cp.concert_id = c.id) AS linked_product_count,
+            (SELECT COUNT(*)::int FROM ticket_assignments ta WHERE ta.concert_id = c.id) AS ticket_count
+     FROM concerts c
      ${where}
-     ORDER BY concert_date ASC, name ASC`,
+     ORDER BY c.concert_date ASC, c.name ASC`,
     values
   );
   return res.rows;
@@ -28,9 +30,11 @@ export async function listConcerts(filters = {}) {
 export async function findConcertById(id) {
   const pool = getPool();
   const res = await pool.query(
-    `SELECT id, name, concert_date, venue, status, created_at, updated_at
-     FROM concerts
-     WHERE id = $1
+    `SELECT c.id, c.name, c.concert_date, c.venue, c.status, c.created_at, c.updated_at,
+            (SELECT COUNT(*)::int FROM concert_products cp WHERE cp.concert_id = c.id) AS linked_product_count,
+            (SELECT COUNT(*)::int FROM ticket_assignments ta WHERE ta.concert_id = c.id) AS ticket_count
+     FROM concerts c
+     WHERE c.id = $1
      LIMIT 1`,
     [id]
   );

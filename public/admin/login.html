@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin — Sign in</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <header class="admin-top">
+      <h1>Concert ticketing — Admin</h1>
+    </header>
+    <main>
+      <div class="card" style="max-width: 22rem; margin: 2rem auto">
+        <h2>Sign in</h2>
+        <form id="form">
+          <div class="form-row">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="username" required />
+          </div>
+          <div class="form-row">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button type="submit">Sign in</button>
+          <p id="err" class="msg-error" hidden></p>
+        </form>
+      </div>
+    </main>
+    <script src="/admin/admin-api.js"></script>
+    <script>
+      (async function () {
+        if (AdminApi.getToken()) {
+          try {
+            await AdminApi.api("/api/admin/me");
+            window.location.href = "/admin/dashboard.html";
+            return;
+          } catch {
+            AdminApi.clearToken();
+          }
+        }
+        document.getElementById("form").addEventListener("submit", async function (e) {
+          e.preventDefault();
+          const err = document.getElementById("err");
+          err.hidden = true;
+          const email = document.getElementById("email").value.trim();
+          const password = document.getElementById("password").value;
+          try {
+            const data = await AdminApi.api("/api/admin/login", {
+              method: "POST",
+              body: JSON.stringify({ email, password }),
+            });
+            if (data.token) {
+              AdminApi.setToken(data.token);
+              window.location.href = "/admin/dashboard.html";
+            }
+          } catch (x) {
+            err.textContent = x.message || "Login failed";
+            err.hidden = false;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

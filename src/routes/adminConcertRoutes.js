@@ -6,6 +6,7 @@ import {
   getConcertForAdmin,
   createConcertForAdmin,
   updateConcertForAdmin,
+  listTicketsForConcertAdmin,
 } from "../services/concertService.js";
 
 /**
@@ -29,6 +30,14 @@ export function createAdminConcertRouter() {
     asyncHandler(async (req, res) => {
       const concert = await createConcertForAdmin(req.body ?? {});
       res.status(201).json({ ok: true, concert });
+    })
+  );
+
+  router.get(
+    "/:concertId/tickets",
+    asyncHandler(async (req, res) => {
+      const tickets = await listTicketsForConcertAdmin(req.params.concertId);
+      res.status(200).json({ ok: true, tickets });
     })
   );
 

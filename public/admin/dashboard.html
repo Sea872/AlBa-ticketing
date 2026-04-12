@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin — Dashboard</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <header class="admin-top">
+      <h1>Dashboard</h1>
+      <nav>
+        <a href="/admin/tickets.html">Ticket search</a>
+        <a href="/admin/concert.html?new=1">New concert</a>
+        <a href="#" id="logout">Sign out</a>
+      </nav>
+    </header>
+    <main class="admin-wide">
+      <p id="load" class="muted">Loading…</p>
+      <div id="content" hidden>
+        <div class="stat-grid" id="stat-grid"></div>
+
+        <div class="card">
+          <h2>Upcoming concerts</h2>
+          <p class="muted" style="margin-top: 0; font-size: 0.875rem">
+            Active shows on or after today — tickets issued and rows with an email error recorded.
+          </p>
+          <div id="upcoming-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Date</th>
+                  <th>Venue</th>
+                  <th>Tickets</th>
+                  <th>Email errors</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="upcoming-body"></tbody>
+            </table>
+            <p id="upcoming-empty" class="empty" hidden>No upcoming active concerts.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Recent orders processed</h2>
+          <p class="muted" style="margin-top: 0; font-size: 0.875rem">
+            Last webhook-processed Shopify orders (ticket count and email send / error flags).
+          </p>
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Shopify order</th>
+                <th>Processed</th>
+                <th>Concert (hint)</th>
+                <th>Tickets</th>
+                <th>Emails sent</th>
+                <th>With email error</th>
+              </tr>
+            </thead>
+            <tbody id="orders-body"></tbody>
+          </table>
+          <p id="orders-empty" class="empty" hidden>No processed orders yet.</p>
+        </div>
+
+        <div class="card">
+          <h2>Failed emails</h2>
+          <p class="muted" style="margin-top: 0; font-size: 0.875rem">
+            Tickets where <code>email_last_error</code> is set. Use Resend after fixing the underlying issue.
+          </p>
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Concert</th>
+                <th>Email</th>
+                <th>Order</th>
+                <th>Error</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="fail-body"></tbody>
+          </table>
+          <p id="fail-empty" class="empty" hidden>No failed-email rows right now.</p>
+          <p id="fail-msg" class="msg-ok" hidden></p>
+        </div>
+
+        <div class="card">
+          <h2>All concerts</h2>
+          <p class="hint-box" style="margin-bottom: 1rem">
+            <strong>Tip:</strong> Link at least one Shopify product before selling tickets. Change
+            <strong>Status</strong> here for a quick sold-out / wrap-up without opening the editor.
+          </p>
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Date</th>
+                <th>Venue</th>
+                <th>Status</th>
+                <th>Products</th>
+                <th>Tickets</th>
+                <th>Readiness</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+          <p id="empty" class="empty" hidden>No concerts yet. Create one to get started.</p>
+        </div>
+      </div>
+      <p id="err" class="msg-error" hidden></p>
+    </main>
+    <script src="/admin/admin-api.js"></script>
+    <script>
+      (async function () {
+        const ok = await AdminApi.requireAuth();
+        if (!ok) return;
+
+        document.getElementById("logout").addEventListener("click", function (e) {
+          e.preventDefault();
+          AdminApi.logout();
+        });
+
+        function esc(s) {
+          return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        function statusOptions(current) {
+          const opts = ["active", "finished", "cancelled"];
+          return opts
+            .map(function (v) {
+              return (
+                '<option value="' +
+                esc(v) +
+                '"' +
+                (v === current ? " selected" : "") +
+                ">" +
+                esc(v) +
+                "</option>"
+              );
+            })
+            .join("");
+        }
+
+        const load = document.getElementById("load");
+        const content = document.getElementById("content");
+        const err = document.getElementById("err");
+
+        try {
+          const [summaryData, ordersData, failData, concertsData] = await Promise.all([
+            AdminApi.api("/api/admin/dashboard/summary"),
+            AdminApi.api("/api/admin/dashboard/recent-orders?limit=20"),
+            AdminApi.api("/api/admin/tickets/email-failures?limit=40"),
+            AdminApi.api("/api/admin/concerts"),
+          ]);
+
+          load.hidden = true;
+          content.hidden = false;
+
+          const totals = summaryData.totals || {};
+          document.getElementById("stat-grid").innerHTML =
+            '<div class="stat-card"><div class="stat-val">' +
+            esc(String(totals.ticketsIssued ?? 0)) +
+            '</div><div class="stat-lbl">Tickets issued (issued + used)</div></div>' +
+            '<div class="stat-card"><div class="stat-val">' +
+            esc(String(totals.openEmailFailures ?? 0)) +
+            '</div><div class="stat-lbl">Rows with email error</div></div>' +
+            '<div class="stat-card"><div class="stat-val">' +
+            esc(String(totals.upcomingActiveConcerts ?? 0)) +
+            '</div><div class="stat-lbl">Upcoming active concerts</div></div>';
+
+          const upcoming = summaryData.upcomingConcerts || [];
+          const upBody = document.getElementById("upcoming-body");
+          const upEmpty = document.getElementById("upcoming-empty");
+          if (upcoming.length === 0) {
+            upBody.innerHTML = "";
+            document.getElementById("upcoming-wrap").querySelector("table").hidden = true;
+            upEmpty.hidden = false;
+          } else {
+            document.getElementById("upcoming-wrap").querySelector("table").hidden = false;
+            upEmpty.hidden = true;
+            upBody.innerHTML = upcoming
+              .map(function (c) {
+                return (
+                  "<tr><td>" +
+                  esc(c.name) +
+                  "</td><td>" +
+                  esc(c.concertDate) +
+                  "</td><td>" +
+                  esc(c.venue) +
+                  "</td><td>" +
+                  esc(String(c.ticketsSold ?? 0)) +
+                  "</td><td>" +
+                  esc(String(c.emailFailureCount ?? 0)) +
+                  '</td><td><a class="btn secondary" href="/admin/concert.html?id=' +
+                  encodeURIComponent(c.id) +
+                  '">Open</a></td></tr>'
+                );
+              })
+              .join("");
+          }
+
+          const orders = ordersData.orders || [];
+          const ordersBody = document.getElementById("orders-body");
+          const ordersEmpty = document.getElementById("orders-empty");
+          if (orders.length === 0) {
+            ordersBody.innerHTML = "";
+            ordersBody.parentElement.querySelector("thead").parentElement.hidden = true;
+            ordersEmpty.hidden = false;
+          } else {
+            ordersBody.parentElement.querySelector("thead").parentElement.hidden = false;
+            ordersEmpty.hidden = true;
+            ordersBody.innerHTML = orders
+              .map(function (o) {
+                const t = o.processedAt ? String(o.processedAt).slice(0, 19).replace("T", " ") : "—";
+                return (
+                  "<tr><td class=\"mono\">" +
+                  esc(o.shopifyOrderId) +
+                  "</td><td>" +
+                  esc(t) +
+                  "</td><td>" +
+                  esc(o.concertNameHint || "—") +
+                  "</td><td>" +
+                  esc(String(o.ticketCount ?? 0)) +
+                  "</td><td>" +
+                  esc(String(o.emailsSentCount ?? 0)) +
+                  "</td><td>" +
+                  esc(String(o.ticketsWithEmailErrors ?? 0)) +
+                  "</td></tr>"
+                );
+              })
+              .join("");
+          }
+
+          const fails = failData.tickets || [];
+          const failBody = document.getElementById("fail-body");
+          const failEmpty = document.getElementById("fail-empty");
+          if (fails.length === 0) {
+            failBody.innerHTML = "";
+            failEmpty.hidden = false;
+          } else {
+            failEmpty.hidden = true;
+            failBody.innerHTML = fails
+              .map(function (t) {
+                const errText = t.emailLastError ? String(t.emailLastError).slice(0, 120) : "—";
+                return (
+                  "<tr><td>" +
+                  esc(t.concertName || "—") +
+                  "</td><td>" +
+                  esc(t.customerEmail) +
+                  '</td><td class="mono">' +
+                  esc(t.shopifyOrderId) +
+                  "</td><td title=\"" +
+                  esc(t.emailLastError || "") +
+                  '">' +
+                  esc(errText) +
+                  (t.emailLastError && String(t.emailLastError).length > 120 ? "…" : "") +
+                  '</td><td><button type="button" class="btn secondary resend-fail" data-ticket="' +
+                  esc(t.id) +
+                  '">Resend</button></td></tr>'
+                );
+              })
+              .join("");
+            failBody.querySelectorAll(".resend-fail").forEach(function (btn) {
+              btn.addEventListener("click", async function () {
+                const tid = btn.getAttribute("data-ticket");
+                const msg = document.getElementById("fail-msg");
+                msg.hidden = true;
+                btn.disabled = true;
+                try {
+                  await AdminApi.api("/api/admin/tickets/resend", {
+                    method: "POST",
+                    body: JSON.stringify({ ticketId: tid }),
+                  });
+                  msg.textContent = "Resend queued / sent.";
+                  msg.hidden = false;
+                  window.location.reload();
+                } catch (x) {
+                  alert(x.message || "Resend failed");
+                } finally {
+                  btn.disabled = false;
+                }
+              });
+            });
+          }
+
+          const rows = concertsData.concerts || [];
+          const tbody = document.getElementById("tbody");
+          const empty = document.getElementById("empty");
+          if (rows.length === 0) {
+            empty.hidden = false;
+            return;
+          }
+          empty.hidden = true;
+          tbody.innerHTML = rows
+            .map(function (c) {
+              const nP = typeof c.linkedProductCount === "number" ? c.linkedProductCount : 0;
+              const nT = typeof c.ticketCount === "number" ? c.ticketCount : 0;
+              const prodLabel = nP === 1 ? "1 product" : nP + " products";
+              const tickLabel = nT === 1 ? "1 ticket" : nT + " tickets";
+              let readiness = "";
+              if (c.status !== "active") {
+                readiness = '<span class="badge badge-muted">Not selling</span>';
+              } else if (c.readyForSales) {
+                readiness = '<span class="badge badge-ok">Ready</span>';
+              } else {
+                readiness = '<span class="badge badge-warn">No products</span>';
+              }
+              return (
+                "<tr><td>" +
+                esc(c.name) +
+                "</td><td>" +
+                esc(c.concertDate) +
+                "</td><td>" +
+                esc(c.venue) +
+                '</td><td><select class="status-quick" data-id="' +
+                esc(c.id) +
+                '" data-prev="' +
+                esc(c.status) +
+                '">' +
+                statusOptions(c.status) +
+                "</select></td><td>" +
+                esc(prodLabel) +
+                "</td><td>" +
+                esc(tickLabel) +
+                "</td><td>" +
+                readiness +
+                '</td><td><a class="btn secondary" href="/admin/concert.html?id=' +
+                encodeURIComponent(c.id) +
+                '">Open</a></td></tr>'
+              );
+            })
+            .join("");
+
+          tbody.addEventListener("change", async function (ev) {
+            const el = ev.target;
+            if (!el || !el.classList || !el.classList.contains("status-quick")) return;
+            const id = el.getAttribute("data-id");
+            const prev = el.getAttribute("data-prev");
+            const next = el.value;
+            if (!id || next === prev) return;
+            try {
+              await AdminApi.api("/api/admin/concerts/" + encodeURIComponent(id), {
+                method: "PATCH",
+                body: JSON.stringify({ status: next }),
+              });
+              el.setAttribute("data-prev", next);
+            } catch (x) {
+              alert(x.message || "Could not update status");
+              el.value = prev;
+            }
+          });
+        } catch (e) {
+          load.hidden = true;
+          err.textContent = e.message || "Failed to load dashboard";
+          err.hidden = false;
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin — Ticket search</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <header class="admin-top">
+      <h1>Ticket search</h1>
+      <nav>
+        <a href="/admin/dashboard.html">← Dashboard</a>
+        <a href="#" id="logout">Sign out</a>
+      </nav>
+    </header>
+    <main class="admin-wide">
+      <div class="card">
+        <h2>Find tickets</h2>
+        <p class="muted" style="margin-top: 0; font-size: 0.875rem">
+          Search by <strong>customer email</strong> (exact match, case-insensitive) or
+          <strong>Shopify order ID</strong> (numeric).
+        </p>
+        <form id="search-form" class="flex" style="align-items: flex-end; flex-wrap: wrap">
+          <div class="form-row" style="margin-bottom: 0; min-width: 12rem; flex: 1">
+            <label for="q">Query</label>
+            <input id="q" name="q" type="text" autocomplete="off" placeholder="email or order id" required />
+          </div>
+          <div class="form-row" style="margin-bottom: 0; min-width: 10rem">
+            <label for="mode">Search by</label>
+            <select id="mode" name="mode">
+              <option value="email">Customer email</option>
+              <option value="order">Shopify order ID</option>
+            </select>
+          </div>
+          <button type="submit">Search</button>
+        </form>
+        <p id="form-err" class="msg-error" hidden></p>
+      </div>
+
+      <div class="card" id="results-card" hidden>
+        <h2>Results</h2>
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Concert</th>
+              <th>Email</th>
+              <th>Order</th>
+              <th>#</th>
+              <th>Status</th>
+              <th>Email sent</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+        <p id="results-empty" class="empty" hidden>No matching tickets.</p>
+      </div>
+    </main>
+    <script src="/admin/admin-api.js"></script>
+    <script>
+      (async function () {
+        const authOk = await AdminApi.requireAuth();
+        if (!authOk) return;
+
+        document.getElementById("logout").addEventListener("click", function (e) {
+          e.preventDefault();
+          AdminApi.logout();
+        });
+
+        function esc(s) {
+          return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        const form = document.getElementById("search-form");
+        const formErr = document.getElementById("form-err");
+        const resultsCard = document.getElementById("results-card");
+        const resultsBody = document.getElementById("results-body");
+        const resultsEmpty = document.getElementById("results-empty");
+
+        async function runSearch() {
+          formErr.hidden = true;
+          const q = document.getElementById("q").value.trim();
+          const mode = document.getElementById("mode").value;
+          if (!q) return;
+
+          let path = "/api/admin/tickets/search?";
+          if (mode === "order") {
+            path += "shopifyOrderId=" + encodeURIComponent(q);
+          } else {
+            path += "email=" + encodeURIComponent(q);
+          }
+
+          try {
+            const data = await AdminApi.api(path);
+            const tickets = data.tickets || [];
+            resultsCard.hidden = false;
+            resultsBody.innerHTML = "";
+            if (tickets.length === 0) {
+              resultsEmpty.hidden = false;
+              return;
+            }
+            resultsEmpty.hidden = true;
+            tickets.forEach(function (t) {
+              const sent = t.emailSentAt ? String(t.emailSentAt).slice(0, 19).replace("T", " ") : "—";
+              const tr = document.createElement("tr");
+              const actions =
+                '<a class="btn secondary" href="/admin/concert.html?id=' +
+                encodeURIComponent(t.concertId) +
+                '">Concert</a>' +
+                (t.status === "issued"
+                  ? ' <button type="button" class="btn secondary resend-t">Resend</button> <button type="button" class="danger cancel-t">Cancel</button>'
+                  : "");
+              tr.innerHTML =
+                "<td>" +
+                esc(t.concertName || "—") +
+                "</td><td>" +
+                esc(t.customerEmail) +
+                '</td><td class="mono">' +
+                esc(t.shopifyOrderId) +
+                "</td><td>" +
+                esc(String(t.ticketIndex)) +
+                "</td><td>" +
+                esc(t.status) +
+                "</td><td>" +
+                esc(sent) +
+                "</td><td>" +
+                actions +
+                "</td>";
+              if (t.status === "issued") {
+                tr.querySelector(".resend-t").addEventListener("click", async function () {
+                  try {
+                    await AdminApi.api("/api/admin/tickets/resend", {
+                      method: "POST",
+                      body: JSON.stringify({ ticketId: t.id }),
+                    });
+                    runSearch();
+                  } catch (x) {
+                    alert(x.message || "Resend failed");
+                  }
+                });
+                tr.querySelector(".cancel-t").addEventListener("click", async function () {
+                  if (!confirm("Cancel this ticket? It will no longer be valid for entry.")) return;
+                  try {
+                    await AdminApi.api("/api/admin/tickets/" + encodeURIComponent(t.id) + "/cancel", {
+                      method: "POST",
+                    });
+                    runSearch();
+                  } catch (x) {
+                    alert(x.message || "Cancel failed");
+                  }
+                });
+              }
+              resultsBody.appendChild(tr);
+            });
+          } catch (x) {
+            formErr.textContent = x.message || "Search failed";
+            formErr.hidden = false;
+          }
+        }
+
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          runSearch();
+        });
+      })();
+    </script>
+  </body>
+</html>

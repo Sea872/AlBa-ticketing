@@ -1,6 +1,6 @@
 # Concert ticketing backend (Alba GB)
 
-Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webhooks, tickets, QR email, admin APIs, check-in validation, and a **staff gate page** at **`/staff/check-in`** (camera QR + paste fallback). See `draft-plan.md` for future refinements.
+Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webhooks, tickets, QR email, **admin browser UI** at **`/admin`**, admin JSON APIs, check-in validation, and a **staff gate page** at **`/staff/check-in`** (camera QR + paste fallback). See `draft-plan.md` for future refinements.
 
 ## Conventions (project-wide)
 
@@ -99,15 +99,27 @@ curl -s http://localhost:8000/api/admin/me \
 
 Set **`JWT_SECRET`** to a long random string in production (server refuses to start without it when `NODE_ENV=production`). Optional: **`JWT_EXPIRES_IN`** (default `7d`).
 
+### Admin web UI (browser)
+
+Plain HTML + JavaScript in **`public/admin/`** (no bundler). After `npm run seed`, open **`http://localhost:8000/admin`** — redirects to the login page. JWT is stored in **`sessionStorage`**. The **Dashboard** shows totals, upcoming concerts, recent processed orders, failed-email rows (with resend), and the full concert list with quick status changes. **Ticket search** finds tickets by customer email or Shopify order id. **Concert** pages link products, list tickets, resend email, and cancel issued tickets. The same operations are available via the JSON API below.
+
+### Dashboard (admin, JWT required)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/api/admin/dashboard/summary` | `totals` (tickets issued, open email failures, upcoming active count) and `upcomingConcerts` (active, date ≥ today) with per-concert `ticketsSold` and `emailFailureCount` |
+| `GET` | `/api/admin/dashboard/recent-orders?limit=20` | Recent `processed_orders` rows with `ticketCount`, `emailsSentCount`, `ticketsWithEmailErrors`, `concertNameHint` |
+
 ### Concerts (admin, JWT required)
 
 All routes need `Authorization: Bearer <token>`.
 
 | Method | Path | Body (JSON) |
 |--------|------|-------------|
-| `GET` | `/api/admin/concerts` | — optional query `?status=active` |
+| `GET` | `/api/admin/concerts` | — optional query `?status=active`. Each concert includes `linkedProductCount`, `ticketCount`, and `readyForSales` (active + at least one product link). |
 | `POST` | `/api/admin/concerts` | `name`, `concertDate` (`YYYY-MM-DD`), `venue`; optional `status` (default `active`) |
-| `GET` | `/api/admin/concerts/:concertId` | — |
+| `GET` | `/api/admin/concerts/:concertId` | — includes `linkedProductCount`, `ticketCount`, `readyForSales` |
+| `GET` | `/api/admin/concerts/:concertId/tickets` | issued tickets for this concert (monitor / resend UI) |
 | `PATCH` | `/api/admin/concerts/:concertId` | any of `name`, `concertDate`, `venue`, `status` |
 
 `status` must be one of: `active`, `finished`, `cancelled`.
@@ -124,13 +136,16 @@ Link Shopify **product** IDs to a concert so webhooks can match line items later
 
 Duplicate `(concert, shopify_product_id)` returns **`409`** with `duplicate_link`. Inactive concert returns **`400`** with `concert_not_active`.
 
-### Ticket email resend (admin, JWT required)
+### Tickets (admin, JWT required)
 
-| Method | Path | Body (JSON) |
-|--------|------|---------------|
+| Method | Path | Query / body |
+|--------|------|----------------|
+| `GET` | `/api/admin/tickets/search` | exactly one of **`email`** (exact, case-insensitive) or **`shopifyOrderId`** (numeric); optional **`limit`** (≤ 100) |
+| `GET` | `/api/admin/tickets/email-failures` | optional **`limit`** (≤ 200); tickets with `email_last_error` set |
 | `POST` | `/api/admin/tickets/resend` | exactly one of `shopifyOrderId` (numeric order id) or `ticketId` (UUID) |
+| `POST` | `/api/admin/tickets/:ticketId/cancel` | — (only **`issued`** → **`cancelled`**) |
 
-See **Ticket resend (admin, Phase 12)** below for behaviour, rate limits, and curl examples.
+See **Ticket resend (admin, Phase 12)** below for resend behaviour, rate limits, and curl examples.
 
 ### Check-in / gate scan (admin, JWT required)
 
