@@ -5,58 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin — Ticket search</title>
     <link rel="stylesheet" href="/admin/styles.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/css/iziToast.min.css" />
   </head>
   <body>
     <header class="admin-top">
-      <h1>Ticket search</h1>
+      <a href="/admin/dashboard.html" class="brand">AlbaGB &nbsp;<span>Ticketing</span></a>
       <nav>
-        <a href="/admin/dashboard.html">← Dashboard</a>
+        <a href="/admin/concerts.html">🎵 Concerts</a>
+        <a href="/admin/tickets.html">🎫 Tickets</a>
         <a href="#" id="logout">Sign out</a>
       </nav>
     </header>
     <main class="admin-wide">
-      <div class="card">
-        <h2>Find tickets</h2>
-        <p class="muted" style="margin-top: 0; font-size: 0.875rem">
-          Search by <strong>customer email</strong> (exact match, case-insensitive) or
-          <strong>Shopify order ID</strong> (numeric).
-        </p>
-        <form id="search-form" class="flex" style="align-items: flex-end; flex-wrap: wrap">
-          <div class="form-row" style="margin-bottom: 0; min-width: 12rem; flex: 1">
-            <label for="q">Query</label>
-            <input id="q" name="q" type="text" autocomplete="off" placeholder="email or order id" required />
-          </div>
-          <div class="form-row" style="margin-bottom: 0; min-width: 10rem">
-            <label for="mode">Search by</label>
-            <select id="mode" name="mode">
-              <option value="email">Customer email</option>
-              <option value="order">Shopify order ID</option>
-            </select>
-          </div>
-          <button type="submit">Search</button>
+      <div class="card" style="padding-bottom:1rem">
+        <h2 style="margin-bottom:0.5rem">Tickets</h2>
+        <p class="muted" style="margin:0 0 1rem;font-size:0.875rem">All issued tickets. Filter by customer email or Shopify order ID.</p>
+        <form id="search-form" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+          <input id="q" name="q" type="text" autocomplete="off" placeholder="Search email or order ID…"
+            style="flex:1;min-width:14rem;max-width:none;padding:0.5rem 0.75rem" />
+          <select id="mode" name="mode" style="max-width:11rem;padding:0.5rem 0.65rem">
+            <option value="email">Customer email</option>
+            <option value="order">Order ID</option>
+          </select>
+          <button type="submit" style="white-space:nowrap">Search</button>
+          <button type="button" id="btn-clear" class="secondary" style="white-space:nowrap">Show all</button>
         </form>
         <p id="form-err" class="msg-error" hidden></p>
       </div>
 
       <div class="card" id="results-card" hidden>
-        <h2>Results</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <h2 style="margin:0" id="results-title">All tickets</h2>
+          <span id="results-count" class="muted" style="font-size:0.8rem"></span>
+        </div>
         <table class="data">
           <thead>
             <tr>
               <th>Concert</th>
-              <th>Email</th>
-              <th>Order</th>
-              <th>#</th>
+              <th>Customer</th>
+              <th>Order ID</th>
+              <th style="text-align:center">#</th>
               <th>Status</th>
               <th>Email sent</th>
-              <th></th>
+              <th style="min-width:10rem"></th>
             </tr>
           </thead>
           <tbody id="results-body"></tbody>
         </table>
-        <p id="results-empty" class="empty" hidden>No matching tickets.</p>
+        <p id="results-empty" class="empty" hidden>No tickets found.</p>
       </div>
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/js/iziToast.min.js"></script>
     <script src="/admin/admin-api.js"></script>
     <script>
       (async function () {
@@ -80,12 +79,94 @@
         const resultsCard = document.getElementById("results-card");
         const resultsBody = document.getElementById("results-body");
         const resultsEmpty = document.getElementById("results-empty");
+        const resultsTitle = document.getElementById("results-title");
+        const resultsCount = document.getElementById("results-count");
+
+        const STATUS_COLOR = { issued: "var(--ok)", used: "var(--muted)", cancelled: "var(--danger)" };
+
+        function renderTickets(tickets, label, reloadFn) {
+          resultsCard.hidden = false;
+          resultsBody.innerHTML = "";
+          resultsTitle.textContent = label;
+          resultsCount.textContent = tickets.length + " ticket" + (tickets.length === 1 ? "" : "s");
+          if (tickets.length === 0) {
+            resultsEmpty.hidden = false;
+            return;
+          }
+          resultsEmpty.hidden = true;
+          tickets.forEach(function (t) {
+            const sent = t.emailSentAt ? String(t.emailSentAt).slice(0, 16).replace("T", " ") : "—";
+            const color = STATUS_COLOR[t.status] || "var(--muted)";
+            const tr = document.createElement("tr");
+            const actions =
+              '<a class="btn secondary" style="font-size:0.8rem;padding:0.3rem 0.6rem" href="/admin/concert.html?id=' +
+              encodeURIComponent(t.concertId) + '">Concert</a>' +
+              (t.status === "issued"
+                ? ' <button type="button" class="btn secondary resend-t" style="font-size:0.8rem;padding:0.3rem 0.6rem">Resend</button>' +
+                  ' <button type="button" class="danger cancel-t" style="font-size:0.8rem;padding:0.3rem 0.6rem">Cancel</button>'
+                : "");
+            tr.innerHTML =
+              "<td>" + esc(t.concertName || "—") +
+              "</td><td>" + esc(t.customerEmail) +
+              '</td><td class="mono" style="font-size:0.8rem">' + esc(t.shopifyOrderId) +
+              '</td><td style="text-align:center">' + esc(String(t.ticketIndex)) +
+              '</td><td><span style="color:' + color + ';font-weight:500">' + esc(t.status) + "</span>" +
+              "</td><td>" + esc(sent) +
+              "</td><td>" + actions + "</td>";
+            if (t.status === "issued") {
+              tr.querySelector(".resend-t").addEventListener("click", async function () {
+                try {
+                  await AdminApi.api("/api/admin/tickets/resend", {
+                    method: "POST",
+                    body: JSON.stringify({ ticketId: t.id }),
+                  });
+                  AdminApi.notify("Email resent", "ok");
+                  reloadFn();
+                } catch (x) {
+                  AdminApi.notify(x.message || "Resend failed", "error");
+                }
+              });
+              tr.querySelector(".cancel-t").addEventListener("click", function () {
+                AdminApi.confirm("Cancel this ticket? It will no longer be valid for entry.", async function () {
+                  try {
+                    await AdminApi.api("/api/admin/tickets/" + encodeURIComponent(t.id) + "/cancel", {
+                      method: "POST",
+                    });
+                    AdminApi.notify("Ticket cancelled", "ok");
+                    reloadFn();
+                  } catch (x) {
+                    AdminApi.notify(x.message || "Cancel failed", "error");
+                  }
+                });
+              });
+            }
+            resultsBody.appendChild(tr);
+          });
+        }
+
+        async function loadAll() {
+          document.getElementById("q").value = "";
+          formErr.hidden = true;
+          resultsCard.hidden = false;
+          resultsTitle.textContent = "All tickets";
+          resultsCount.textContent = "Loading…";
+          resultsBody.innerHTML = "";
+          resultsEmpty.hidden = true;
+          try {
+            const data = await AdminApi.api("/api/admin/tickets");
+            renderTickets(data.tickets || [], "All tickets", loadAll);
+          } catch (x) {
+            resultsCard.hidden = true;
+            formErr.textContent = x.message || "Load failed";
+            formErr.hidden = false;
+          }
+        }
 
         async function runSearch() {
           formErr.hidden = true;
           const q = document.getElementById("q").value.trim();
           const mode = document.getElementById("mode").value;
-          if (!q) return;
+          if (!q) { loadAll(); return; }
 
           let path = "/api/admin/tickets/search?";
           if (mode === "order") {
@@ -96,66 +177,7 @@
 
           try {
             const data = await AdminApi.api(path);
-            const tickets = data.tickets || [];
-            resultsCard.hidden = false;
-            resultsBody.innerHTML = "";
-            if (tickets.length === 0) {
-              resultsEmpty.hidden = false;
-              return;
-            }
-            resultsEmpty.hidden = true;
-            tickets.forEach(function (t) {
-              const sent = t.emailSentAt ? String(t.emailSentAt).slice(0, 19).replace("T", " ") : "—";
-              const tr = document.createElement("tr");
-              const actions =
-                '<a class="btn secondary" href="/admin/concert.html?id=' +
-                encodeURIComponent(t.concertId) +
-                '">Concert</a>' +
-                (t.status === "issued"
-                  ? ' <button type="button" class="btn secondary resend-t">Resend</button> <button type="button" class="danger cancel-t">Cancel</button>'
-                  : "");
-              tr.innerHTML =
-                "<td>" +
-                esc(t.concertName || "—") +
-                "</td><td>" +
-                esc(t.customerEmail) +
-                '</td><td class="mono">' +
-                esc(t.shopifyOrderId) +
-                "</td><td>" +
-                esc(String(t.ticketIndex)) +
-                "</td><td>" +
-                esc(t.status) +
-                "</td><td>" +
-                esc(sent) +
-                "</td><td>" +
-                actions +
-                "</td>";
-              if (t.status === "issued") {
-                tr.querySelector(".resend-t").addEventListener("click", async function () {
-                  try {
-                    await AdminApi.api("/api/admin/tickets/resend", {
-                      method: "POST",
-                      body: JSON.stringify({ ticketId: t.id }),
-                    });
-                    runSearch();
-                  } catch (x) {
-                    alert(x.message || "Resend failed");
-                  }
-                });
-                tr.querySelector(".cancel-t").addEventListener("click", async function () {
-                  if (!confirm("Cancel this ticket? It will no longer be valid for entry.")) return;
-                  try {
-                    await AdminApi.api("/api/admin/tickets/" + encodeURIComponent(t.id) + "/cancel", {
-                      method: "POST",
-                    });
-                    runSearch();
-                  } catch (x) {
-                    alert(x.message || "Cancel failed");
-                  }
-                });
-              }
-              resultsBody.appendChild(tr);
-            });
+            renderTickets(data.tickets || [], "Results for \"" + q + "\"", runSearch);
           } catch (x) {
             formErr.textContent = x.message || "Search failed";
             formErr.hidden = false;
@@ -166,6 +188,10 @@
           e.preventDefault();
           runSearch();
         });
+
+        document.getElementById("btn-clear").addEventListener("click", loadAll);
+
+        loadAll();
       })();
     </script>
   </body>

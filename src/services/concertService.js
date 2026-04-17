@@ -49,6 +49,42 @@ export function parseConcertDateString(value, fieldName = "concertDate") {
   return raw;
 }
 
+function getTodayUtcYyyyMmDd() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatRowConcertDate(row) {
+  const d = row.concert_date;
+  return d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+}
+
+/** New concerts cannot be scheduled in the past (by UTC calendar date). */
+function assertConcertDateNotInPastForCreate(yyyyMmDd) {
+  if (yyyyMmDd < getTodayUtcYyyyMmDd()) {
+    throw new HttpError(400, "concert date must be today or in the future", {
+      expose: true,
+      code: "validation_error",
+    });
+  }
+}
+
+/**
+ * On update: unchanged date is always allowed (including historical shows).
+ * Changing the date must not move it before today (UTC).
+ */
+function assertConcertDateAllowedForUpdate(yyyyMmDd, existingRow) {
+  const previous = formatRowConcertDate(existingRow);
+  if (yyyyMmDd === previous) {
+    return;
+  }
+  if (yyyyMmDd < getTodayUtcYyyyMmDd()) {
+    throw new HttpError(400, "concert date must be today or in the future", {
+      expose: true,
+      code: "validation_error",
+    });
+  }
+}
+
 function parseStatus(value, { required, defaultValue }) {
   if (value === undefined || value === null) {
     if (defaultValue !== undefined) {
@@ -152,6 +188,7 @@ export async function listTicketsForConcertAdmin(concertId) {
 export async function createConcertForAdmin(body) {
   const name = trimNonEmptyString(body?.name, "name", maxNameLen);
   const concertDate = parseConcertDateString(body?.concertDate, "concertDate");
+  assertConcertDateNotInPastForCreate(concertDate);
   const venue = trimNonEmptyString(body?.venue, "venue", maxVenueLen);
   const status = parseStatus(body?.status, { required: false, defaultValue: "active" });
 
@@ -174,6 +211,7 @@ export async function updateConcertForAdmin(concertId, body) {
   }
   if (Object.prototype.hasOwnProperty.call(body ?? {}, "concertDate")) {
     patch.concertDate = parseConcertDateString(body.concertDate, "concertDate");
+    assertConcertDateAllowedForUpdate(patch.concertDate, existing);
   }
   if (Object.prototype.hasOwnProperty.call(body ?? {}, "venue")) {
     patch.venue = trimNonEmptyString(body.venue, "venue", maxVenueLen);

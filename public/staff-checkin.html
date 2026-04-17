@@ -27,7 +27,7 @@
       min-height: 100dvh;
       line-height: 1.45;
     }
-    main { max-width: 28rem; margin: 0 auto; padding: 1rem 1rem 2rem; }
+    main { max-width: 28rem; margin: 0 auto; padding: 2.5rem 1rem 3rem; }
     h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem; }
     p.sub { color: var(--muted); font-size: 0.875rem; margin: 0 0 1rem; }
     label { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.35rem; }
@@ -63,33 +63,84 @@
       min-height: 12rem;
     }
     #reader video { border-radius: 0.75rem; }
-    .result {
-      margin-top: 1rem;
-      padding: 1rem 1.1rem;
-      border-radius: 0.75rem;
-      font-size: 1.125rem;
-      font-weight: 700;
+    /* ── Scan result overlay ── */
+    #scan-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 1rem;
+      padding: 2rem;
       text-align: center;
-      letter-spacing: 0.02em;
+      animation: overlayIn 0.15s ease-out;
     }
-    .result.valid { background: rgba(34, 197, 94, 0.2); color: #86efac; }
-    .result.already_used { background: rgba(100, 116, 139, 0.35); color: #cbd5e1; }
-    .result.wrong_event { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
-    .result.cancelled { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
-    .result.invalid { background: rgba(239, 68, 68, 0.25); color: #fecaca; }
-    .result.error { background: rgba(239, 68, 68, 0.2); color: #fecaca; font-size: 0.95rem; }
+    #scan-overlay.show { display: flex; }
+    @keyframes overlayIn {
+      from { opacity: 0; transform: scale(0.93); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    #scan-overlay .scan-icon {
+      font-size: 5rem;
+      line-height: 1;
+      animation: iconPop 0.2s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes iconPop {
+      from { transform: scale(0.4); }
+      to   { transform: scale(1); }
+    }
+    #scan-overlay .scan-label {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      line-height: 1.15;
+    }
+    #scan-overlay .scan-detail {
+      font-size: 1.1rem;
+      font-weight: 400;
+      opacity: 0.85;
+      line-height: 1.5;
+    }
+    #scan-overlay .scan-dismiss {
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      opacity: 0.5;
+    }
+    #scan-overlay.valid    { background: #14532d; color: #bbf7d0; }
+    #scan-overlay.used     { background: #1e293b; color: #cbd5e1; }
+    #scan-overlay.warn     { background: #78350f; color: #fde68a; }
+    #scan-overlay.bad      { background: #450a0a; color: #fecaca; }
+    /* inline error (concert not selected etc) */
+    .result.error {
+      margin-top: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-radius: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      background: rgba(239,68,68,0.15);
+      color: #fca5a5;
+      text-align: center;
+    }
     .row-btns { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .row-btns button { flex: 1; min-width: 8rem; margin-top: 0; }
     textarea { min-height: 5rem; font-family: ui-monospace, monospace; font-size: 0.8rem; resize: vertical; }
     .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.35rem; }
     header { padding-bottom: 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+    .brand { font-weight: 700; font-size: 1rem; color: var(--text); text-decoration: none; letter-spacing: -0.01em; }
+    .brand span { color: #60a5fa; font-weight: 400; }
   </style>
 </head>
 <body>
   <main>
     <header>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem">
+        <a href="#" class="brand">AlbaGB &nbsp;<span>Ticketing</span></a>
+        <span style="font-size:0.75rem;color:var(--muted)">Staff</span>
+      </div>
       <h1>Gate check-in</h1>
-      <p class="sub">Sign in, choose today’s concert, then scan ticket QR codes. HTTPS is required for the camera on most phones.</p>
+      <p class="sub">Sign in, select today’s concert, then scan ticket QR codes. HTTPS required for camera on mobile.</p>
     </header>
 
     <section id="loginSection" class="stack">
@@ -124,28 +175,39 @@
         </div>
         <button type="button" class="danger" id="btnLogout">Sign out</button>
       </div>
-      <div id="result" class="result hidden" role="status" aria-live="polite"></div>
     </section>
   </main>
+
+  <!-- fullscreen scan result overlay -->
+  <div id="scan-overlay" role="status" aria-live="assertive">
+    <div class="scan-icon" id="overlay-icon"></div>
+    <div class="scan-label" id="overlay-label"></div>
+    <div class="scan-detail" id="overlay-detail"></div>
+    <div class="scan-dismiss">Tap anywhere to dismiss</div>
+  </div>
 
   <script>
     (function () {
       const TOKEN_KEY = "staffCheckinToken";
       const loginSection = document.getElementById("loginSection");
       const appSection = document.getElementById("appSection");
-      const loginError = document.getElementById("loginError");
-      const email = document.getElementById("email");
-      const password = document.getElementById("password");
-      const btnLogin = document.getElementById("btnLogin");
-      const concertSelect = document.getElementById("concert");
-      const btnCamera = document.getElementById("btnCamera");
-      const btnStop = document.getElementById("btnStop");
-      const readerEl = document.getElementById("reader");
-      const manualQr = document.getElementById("manualQr");
-      const btnManual = document.getElementById("btnManual");
-      const btnLogout = document.getElementById("btnLogout");
-      const resultEl = document.getElementById("result");
+      const loginError   = document.getElementById("loginError");
+      const email        = document.getElementById("email");
+      const password     = document.getElementById("password");
+      const btnLogin     = document.getElementById("btnLogin");
+      const concertSelect= document.getElementById("concert");
+      const btnCamera    = document.getElementById("btnCamera");
+      const btnStop      = document.getElementById("btnStop");
+      const readerEl     = document.getElementById("reader");
+      const manualQr     = document.getElementById("manualQr");
+      const btnManual    = document.getElementById("btnManual");
+      const btnLogout    = document.getElementById("btnLogout");
+      const overlay      = document.getElementById("scan-overlay");
+      const overlayIcon  = document.getElementById("overlay-icon");
+      const overlayLabel = document.getElementById("overlay-label");
+      const overlayDetail= document.getElementById("overlay-detail");
 
+      let dismissTimer = null;
       let html5Qr = null;
       let lastPayload = "";
       let lastAt = 0;
@@ -172,18 +234,41 @@
         };
       }
 
-      function showResult(className, text) {
-        resultEl.className = "result " + className;
-        resultEl.textContent = text;
-        resultEl.classList.remove("hidden");
-        if (className === "valid" && navigator.vibrate) {
-          navigator.vibrate(80);
+      const SCAN_CONFIG = {
+        valid:        { theme: "valid",  icon: "✅", autoDismiss: 4000, vibrate: [80] },
+        already_used: { theme: "used",   icon: "🔁", autoDismiss: 3500, vibrate: [60, 80, 60] },
+        wrong_event:  { theme: "warn",   icon: "⚠️", autoDismiss: 4000, vibrate: [100, 80, 100] },
+        cancelled:    { theme: "bad",    icon: "🚫", autoDismiss: 4000, vibrate: [200] },
+        invalid:      { theme: "bad",    icon: "❌", autoDismiss: 4000, vibrate: [200] },
+        error:        { theme: "bad",    icon: "⚠️", autoDismiss: 0,    vibrate: [100] },
+      };
+
+      function showOverlay(type, label, detail) {
+        const cfg = SCAN_CONFIG[type] || { theme: "bad", icon: "❓", autoDismiss: 3000, vibrate: [] };
+        overlay.className = "show " + cfg.theme;
+        overlayIcon.textContent  = cfg.icon;
+        overlayLabel.textContent = label;
+        overlayDetail.textContent = detail || "";
+        if (navigator.vibrate && cfg.vibrate.length) navigator.vibrate(cfg.vibrate);
+        clearTimeout(dismissTimer);
+        if (cfg.autoDismiss > 0) {
+          dismissTimer = setTimeout(hideOverlay, cfg.autoDismiss);
         }
       }
 
-      function hideResult() {
-        resultEl.classList.add("hidden");
+      function hideOverlay() {
+        clearTimeout(dismissTimer);
+        overlay.className = "";
       }
+
+      overlay.addEventListener("click", hideOverlay);
+
+      function showResult(type, label) {
+        const cfg = SCAN_CONFIG[type] || SCAN_CONFIG.error;
+        showOverlay(type, label, "");
+      }
+
+      function hideResult() { hideOverlay(); }
 
       async function apiLogin() {
         loginError.classList.add("hidden");
@@ -221,7 +306,7 @@
           setToken(null);
           appSection.classList.add("hidden");
           loginSection.classList.remove("hidden");
-          showResult("error", "Session expired. Sign in again.");
+          showOverlay("error", "Session expired", "Please sign in again.");
           return;
         }
         const data = await res.json();
@@ -237,7 +322,7 @@
           const opt = document.createElement("option");
           opt.value = c.id;
           const d = c.concertDate ? String(c.concertDate).slice(0, 10) : "";
-          opt.textContent = (c.name || "Concert") + (d ? " — " + d : "") + " (" + (c.status || "") + ")";
+          opt.textContent = (d ? d + " — " : "") + (c.name || "Concert") + " (" + (c.status || "") + ")";
           concertSelect.appendChild(opt);
         });
       }
@@ -245,7 +330,7 @@
       async function submitScan(qrText) {
         const concertId = concertSelect.value;
         if (!concertId) {
-          showResult("error", "Select a concert first.");
+          showOverlay("error", "Select a concert", "Choose the concert at this gate first.");
           return;
         }
         const now = Date.now();
@@ -265,33 +350,42 @@
           setToken(null);
           appSection.classList.add("hidden");
           loginSection.classList.remove("hidden");
-          showResult("error", "Session expired. Sign in again.");
+          showOverlay("error", "Session expired", "Please sign in again.");
           return;
         }
         if (!res.ok) {
-          showResult("error", data.detail || data.error || "Request failed");
+          showOverlay("error", "Scan failed", data.detail || data.error || "Request failed");
           return;
         }
         const r = data.result || "unknown";
         const labels = {
-          valid: "VALID — Welcome in",
-          already_used: "ALREADY USED",
-          wrong_event: "WRONG EVENT — Ticket is for another show",
-          cancelled: "CANCELLED",
-          invalid: "INVALID TICKET",
+          valid:        "VALID — Welcome in!",
+          already_used: "Already used",
+          wrong_event:  "Wrong event",
+          cancelled:    "Ticket cancelled",
+          invalid:      "Invalid ticket",
         };
-        showResult(r, labels[r] || r.toUpperCase());
+        let detail = "";
+        if (r === "valid") {
+          const parts = [];
+          if (data.ticketIndex != null) parts.push("Ticket #" + data.ticketIndex);
+          if (data.customerEmail)       parts.push(data.customerEmail);
+          detail = parts.join("  ·  ");
+        } else if (r === "wrong_event" && data.ticketConcertId) {
+          detail = "Ticket is for a different show";
+        }
+        showOverlay(r, labels[r] || r.toUpperCase(), detail);
       }
 
       async function startCamera() {
         if (typeof Html5Qrcode === "undefined") {
-          showResult("error", "QR library failed to load. Check network.");
+          showOverlay("error", "QR library failed", "Check network and reload.");
           return;
         }
         hideResult();
         const concertId = concertSelect.value;
         if (!concertId) {
-          showResult("error", "Select a concert first.");
+          showOverlay("error", "Select a concert", "Choose the concert at this gate first.");
           return;
         }
         btnCamera.disabled = true;
@@ -309,7 +403,7 @@
           );
           btnStop.disabled = false;
         } catch (e) {
-          showResult("error", (e && e.message) || "Could not start camera. Allow permission or use HTTPS.");
+          showOverlay("error", "Camera error", (e && e.message) || "Allow camera permission or use HTTPS.");
           btnCamera.disabled = false;
         }
       }
@@ -334,7 +428,7 @@
       btnManual.addEventListener("click", function () {
         const t = manualQr.value.trim();
         if (!t) {
-          showResult("error", "Paste QR JSON first.");
+          showOverlay("error", "No QR data", "Paste QR JSON before submitting.");
           return;
         }
         submitScan(t);

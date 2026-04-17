@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/requireAuth.js";
 import { resendTicketEmailByAdmin } from "../services/ticketResendService.js";
 import {
   searchTicketsForAdmin,
+  listAllTicketsForAdmin,
   listEmailFailuresForAdmin,
   cancelTicketForAdmin,
 } from "../services/adminTicketOpsService.js";
@@ -15,6 +16,14 @@ export function createAdminTicketRouter() {
   const router = Router();
 
   router.use(requireAuth);
+
+  router.get(
+    "/",
+    asyncHandler(async (req, res) => {
+      const tickets = await listAllTicketsForAdmin(req.query?.limit);
+      res.status(200).json({ ok: true, tickets });
+    })
+  );
 
   router.get(
     "/search",

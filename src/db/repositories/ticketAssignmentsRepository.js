@@ -222,6 +222,22 @@ export async function cancelTicketById(ticketId) {
   return res.rows[0] ?? null;
 }
 
+export async function listAllTicketsForAdmin(limit = 200) {
+  const lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const pool = getPool();
+  const res = await pool.query(
+    `SELECT ta.id, ta.concert_id, ta.shopify_order_id, ta.shopify_line_item_id, ta.customer_email,
+            ta.ticket_index, ta.status, ta.email_sent_at, ta.email_last_error, ta.created_at,
+            c.name AS concert_name
+     FROM ticket_assignments ta
+     INNER JOIN concerts c ON c.id = ta.concert_id
+     ORDER BY ta.created_at DESC
+     LIMIT $1`,
+    [lim]
+  );
+  return res.rows;
+}
+
 export async function incrementTicketResendCount(ticketIds, client = null) {
   if (ticketIds.length === 0) {
     return;

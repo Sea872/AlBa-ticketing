@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin — Concert</title>
     <link rel="stylesheet" href="/admin/styles.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/css/iziToast.min.css" />
     <style>
       /* ── Concert hero ── */
       .concert-hero {
@@ -122,14 +123,40 @@
 
       /* ── Product link table ── */
       .product-id-cell { font-family: ui-monospace, monospace; font-size: 0.82rem; }
+
+      /* New concert form — centered column */
+      #new-panel .edit-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      #new-panel .edit-panel > h2 {
+        width: 100%;
+        text-align: center;
+      }
+      #new-panel #new-form {
+        width: min(100%, 28rem);
+        max-width: 28rem;
+        box-sizing: border-box;
+      }
+      #new-panel .edit-actions {
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      #new-panel .edit-panel > .hint-box {
+        width: min(100%, 28rem);
+        max-width: 28rem;
+        box-sizing: border-box;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
     <header class="admin-top">
-      <h1 id="header-title">Concert</h1>
+      <a href="/admin/dashboard.html" class="brand">AlbaGB &nbsp;<span>Ticketing</span></a>
       <nav>
-        <a href="/admin/dashboard.html">← Dashboard</a>
-        <a href="/admin/tickets.html">Ticket search</a>
+        <a href="/admin/concerts.html">🎵 Concerts</a>
+        <a href="/admin/tickets.html">🎫 Tickets</a>
         <a href="#" id="logout">Sign out</a>
       </nav>
     </header>
@@ -280,6 +307,7 @@
       </div>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/js/iziToast.min.js"></script>
     <script src="/admin/admin-api.js"></script>
     <script>
       (async function () {
@@ -317,8 +345,9 @@
 
         if (isNew) {
           loadEl.hidden = true;
-          document.getElementById("header-title").textContent = "New concert";
+          document.title = "Admin — New concert";
           document.getElementById("new-panel").hidden = false;
+          document.getElementById("new-date").min = new Date().toISOString().slice(0, 10);
 
           document.getElementById("new-form").addEventListener("submit", async function (e) {
             e.preventDefault();
@@ -352,7 +381,7 @@
         let concertData = null;
 
         function renderHero(c) {
-          document.getElementById("header-title").textContent = c.name;
+          document.title = "Admin — " + c.name;
           document.getElementById("hero-name").textContent = c.name;
           document.getElementById("hero-date").textContent = "📅 " + fmtDate(c.concertDate);
           document.getElementById("hero-venue").textContent = "📍 " + (c.venue || "—");
@@ -368,7 +397,7 @@
             btn.addEventListener("click", async function () {
               const next = btn.getAttribute("data-status");
               if (next === concertData.status) return;
-              if (!confirm("Change status to "" + next + ""?")) return;
+              if (!confirm("Change status to " + next + "?")) return;
               try {
                 const res = await AdminApi.api("/api/admin/concerts/" + encodeURIComponent(concertId), {
                   method: "PATCH",
@@ -378,7 +407,7 @@
                 renderHero(concertData);
                 renderReadiness(concertData);
               } catch (x) {
-                alert(x.message || "Status change failed");
+                AdminApi.notify(x.message || "Status change failed", "error");
               }
             });
           });

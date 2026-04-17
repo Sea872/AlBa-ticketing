@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { Resend } from "resend";
 import { loadConfig } from "../config.js";
 import { findConcertById } from "../db/repositories/concertsRepository.js";
@@ -54,10 +55,15 @@ export async function sendOrderTicketEmail({ shopifyOrderId, customerEmail, tick
       rows,
     });
 
-    const attachments = tickets.map((t) => ({
-      filename: `ticket-${t.ticketIndex}-${String(t.ticketId).slice(0, 8)}.png`,
-      path: t.absolutePath,
-    }));
+    const attachments = await Promise.all(
+      tickets.map(async (t) => {
+        const buf = await fs.readFile(t.absolutePath);
+        return {
+          filename: `ticket-${t.ticketIndex}-${String(t.ticketId).slice(0, 8)}.png`,
+          content: buf.toString("base64"),
+        };
+      })
+    );
 
     const resend = new Resend(resendApiKey);
     const subject = isResend

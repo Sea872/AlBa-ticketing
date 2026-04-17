@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin — Concerts</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/css/iziToast.min.css" />
+    <style>
+      .status-dot {
+        display: inline-block;
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        margin-right: 0.35rem;
+        vertical-align: middle;
+      }
+      .dot-active   { background: var(--ok); }
+      .dot-finished { background: var(--muted); }
+      .dot-cancelled{ background: var(--danger); }
+    </style>
+  </head>
+  <body>
+    <header class="admin-top">
+      <a href="/admin/dashboard.html" class="brand">AlbaGB &nbsp;<span>Ticketing</span></a>
+      <nav>
+        <a href="/admin/concerts.html" style="color:var(--text)">🎵 Concerts</a>
+        <a href="/admin/tickets.html">🎫 Tickets</a>
+        <a href="#" id="logout">Sign out</a>
+      </nav>
+    </header>
+
+    <main class="admin-wide">
+      <div class="card">
+        <div class="section-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+          <h2 style="margin:0;font-size:1rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">All concerts</h2>
+          <a href="/admin/concert.html?new=1" class="btn secondary" style="font-size:0.82rem;padding:0.3rem 0.75rem">+ New concert</a>
+        </div>
+        <p id="load" class="muted" style="margin:0 0 0.75rem">Loading…</p>
+        <table class="data" id="tbl" hidden>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Date</th>
+              <th>Venue</th>
+              <th>Status</th>
+              <th>Products</th>
+              <th>Tickets</th>
+              <th>Readiness</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <p id="empty" class="empty" hidden>No concerts yet. <a href="/admin/concert.html?new=1">Create one</a>.</p>
+        <p id="err" class="msg-error" hidden></p>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/js/iziToast.min.js"></script>
+    <script src="/admin/admin-api.js"></script>
+    <script>
+      (async function () {
+        const ok = await AdminApi.requireAuth();
+        if (!ok) return;
+
+        document.getElementById("logout").addEventListener("click", function (e) {
+          e.preventDefault();
+          AdminApi.logout();
+        });
+
+        function esc(s) {
+          return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+        }
+
+        function statusOptions(current) {
+          return ["active", "finished", "cancelled"].map(function (v) {
+            return '<option value="' + esc(v) + '"' + (v === current ? " selected" : "") + ">" + esc(v) + "</option>";
+          }).join("");
+        }
+
+        const loadEl = document.getElementById("load");
+        const tbl    = document.getElementById("tbl");
+        const tbody  = document.getElementById("tbody");
+        const emptyEl= document.getElementById("empty");
+        const errEl  = document.getElementById("err");
+
+        try {
+          const data = await AdminApi.api("/api/admin/concerts");
+          const concerts = (data.concerts || []).slice().sort(function (a, b) {
+            return String(b.concertDate).localeCompare(String(a.concertDate));
+          });
+
+          loadEl.hidden = true;
+
+          if (concerts.length === 0) {
+            emptyEl.hidden = false;
+            return;
+          }
+
+          tbl.hidden = false;
+          tbody.innerHTML = concerts.map(function (c) {
+            const nP = typeof c.linkedProductCount === "number" ? c.linkedProductCount : 0;
+            const nT = typeof c.ticketCount === "number" ? c.ticketCount : 0;
+            let readiness = "";
+            if (c.status !== "active") {
+              readiness = '<span class="badge badge-muted">—</span>';
+            } else if (c.readyForSales) {
+              readiness = '<span class="badge badge-ok">Ready</span>';
+            } else {
+              readiness = '<span class="badge badge-warn">No products</span>';
+            }
+            const dotClass = c.status === "active" ? "dot-active" : c.status === "finished" ? "dot-finished" : "dot-cancelled";
+            return (
+              "<tr>" +
+              "<td>" + esc(c.name) + "</td>" +
+              "<td>" + esc(c.concertDate) + "</td>" +
+              "<td>" + esc(c.venue) + "</td>" +
+              '<td><span class="status-dot ' + dotClass + '"></span>' +
+              '<select class="status-quick" data-id="' + esc(c.id) + '" data-prev="' + esc(c.status) + '">' + statusOptions(c.status) + "</select></td>" +
+              "<td>" + esc(String(nP)) + "</td>" +
+              "<td>" + esc(String(nT)) + "</td>" +
+              "<td>" + readiness + "</td>" +
+              '<td><a class="btn secondary" href="/admin/concert.html?id=' + encodeURIComponent(c.id) + '" style="font-size:0.8rem;padding:0.25rem 0.65rem">Open</a></td>' +
+              "</tr>"
+            );
+          }).join("");
+
+          tbody.addEventListener("change", async function (ev) {
+            const el = ev.target;
+            if (!el.classList.contains("status-quick")) return;
+            const id   = el.getAttribute("data-id");
+            const prev = el.getAttribute("data-prev");
+            const next = el.value;
+            if (!id || next === prev) return;
+            try {
+              await AdminApi.api("/api/admin/concerts/" + encodeURIComponent(id), {
+                method: "PATCH",
+                body: JSON.stringify({ status: next }),
+              });
+              el.setAttribute("data-prev", next);
+              const dot = el.previousElementSibling;
+              if (dot) dot.className = "status-dot dot-" + next;
+              AdminApi.notify("Status updated.", "ok");
+            } catch (x) {
+              AdminApi.notify(x.message || "Could not update status", "error");
+              el.value = prev;
+            }
+          });
+
+        } catch (x) {
+          loadEl.hidden = true;
+          errEl.textContent = x.message || "Failed to load concerts";
+          errEl.hidden = false;
+        }
+      })();
+    </script>
+  </body>
+</html>

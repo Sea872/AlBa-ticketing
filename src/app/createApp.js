@@ -50,12 +50,21 @@ export function createApp() {
     });
   });
 
+  /** Site root → gate QR scan (main public feature). Admin stays under `/admin`. */
+  app.get("/", (_req, res) => {
+    res.redirect(302, "/staff/check-in");
+  });
+
+  app.get("/check-in", (_req, res) => {
+    res.redirect(302, "/staff/check-in");
+  });
+
   app.get("/admin", (_req, res) => {
     res.redirect(302, "/admin/login.html");
   });
-  // app.get("/admin/", (_req, res) => {
-  //   res.redirect(302, "/admin/login.html");
-  // });
+  app.get("/admin/", (_req, res) => {
+    res.redirect(302, "/admin/login.html");
+  });
   app.use("/admin", express.static(adminStaticDir, { index: false }));
 
   app.use((req, res) => {

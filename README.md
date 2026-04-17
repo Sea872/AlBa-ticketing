@@ -1,6 +1,6 @@
 # Concert ticketing backend (Alba GB)
 
-Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webhooks, tickets, QR email, **admin browser UI** at **`/admin`**, admin JSON APIs, check-in validation, and a **staff gate page** at **`/staff/check-in`** (camera QR + paste fallback). See `draft-plan.md` for future refinements.
+Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webhooks, tickets, QR email, **admin browser UI** at **`/admin`**, admin JSON APIs, check-in validation, and a **staff gate page** at **`/staff/check-in`** (camera QR + paste fallback). **`GET /`** redirects to **`/staff/check-in`** so the bare domain shows the gate UI instead of a 404. See `draft-plan.md` for future refinements.
 
 ## Conventions (project-wide)
 
@@ -74,7 +74,9 @@ Node.js + Express API for Shopify-backed concert ticketing. **MVP** covers webho
 
    You should see JSON with `"ok": true`.
 
-Default HTTP port is **8000** (override with `PORT`).
+Default HTTP port is **8000** (override with `PORT`). In production, put Nginx (or similar) on **80/443** and proxy to `PORT`; browsers then use `https://your-domain/` without `:8000`.
+
+**Quick URLs:** `GET /` → redirect to staff QR check-in · `GET /check-in` → same · **`/admin`** → admin login · **`/health`** → JSON health.
 
 ### Admin authentication (JWT)
 
@@ -117,10 +119,10 @@ All routes need `Authorization: Bearer <token>`.
 | Method | Path | Body (JSON) |
 |--------|------|-------------|
 | `GET` | `/api/admin/concerts` | — optional query `?status=active`. Each concert includes `linkedProductCount`, `ticketCount`, and `readyForSales` (active + at least one product link). |
-| `POST` | `/api/admin/concerts` | `name`, `concertDate` (`YYYY-MM-DD`), `venue`; optional `status` (default `active`) |
+| `POST` | `/api/admin/concerts` | `name`, `concertDate` (`YYYY-MM-DD`), `venue`; optional `status` (default `active`). **`concertDate` must be today or later** (UTC calendar date). |
 | `GET` | `/api/admin/concerts/:concertId` | — includes `linkedProductCount`, `ticketCount`, `readyForSales` |
 | `GET` | `/api/admin/concerts/:concertId/tickets` | issued tickets for this concert (monitor / resend UI) |
-| `PATCH` | `/api/admin/concerts/:concertId` | any of `name`, `concertDate`, `venue`, `status` |
+| `PATCH` | `/api/admin/concerts/:concertId` | any of `name`, `concertDate`, `venue`, `status`. If **`concertDate`** changes, the new date must be **today or later** (UTC); unchanged date is allowed (e.g. past shows). |
 
 `status` must be one of: `active`, `finished`, `cancelled`.
 

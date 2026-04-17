@@ -2,6 +2,7 @@ import { HttpError } from "../utils/httpError.js";
 import { assertUuidParam } from "../utils/uuid.js";
 import {
   searchTicketsForAdmin as searchTicketsRepo,
+  listAllTicketsForAdmin as listAllTicketsRepo,
   listTicketsWithEmailFailures,
   cancelTicketById,
 } from "../db/repositories/ticketAssignmentsRepository.js";
@@ -24,6 +25,15 @@ function mapTicketRow(row) {
     emailLastError: row.email_last_error ?? null,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
   };
+}
+
+export async function listAllTicketsForAdmin(limit) {
+  let lim;
+  if (limit != null && String(limit).trim() !== "") {
+    lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  }
+  const rows = await listAllTicketsRepo(lim);
+  return rows.map(mapTicketRow);
 }
 
 /**

@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin — Sign in</title>
     <link rel="stylesheet" href="/admin/styles.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/css/iziToast.min.css" />
   </head>
   <body>
     <header class="admin-top">
-      <h1>Concert ticketing — Admin</h1>
+      <a href="/admin/dashboard.html" class="brand">AlbaGB &nbsp;<span>Ticketing</span></a>
     </header>
     <main>
       <div class="card" style="max-width: 22rem; margin: 2rem auto">
@@ -27,6 +28,7 @@
         </form>
       </div>
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/izitoast@1.4.0/dist/js/iziToast.min.js"></script>
     <script src="/admin/admin-api.js"></script>
     <script>
       (async function () {

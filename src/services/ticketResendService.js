@@ -38,6 +38,20 @@ function assertSameCustomerEmail(rows) {
   }
 }
 
+function buildProviderFailureDetail(rawError) {
+  const msg = String(rawError ?? "email provider request failed");
+  const lower = msg.toLowerCase();
+  if (
+    lower.includes("https") ||
+    lower.includes("ssl") ||
+    lower.includes("tls") ||
+    lower.includes("certificate")
+  ) {
+    return `${msg}. Check HTTPS/TLS connectivity and certificate trust between this server and Resend API.`;
+  }
+  return msg;
+}
+
 /**
  * Admin resend: one of shopifyOrderId (all tickets) or ticketId (single ticket).
  */
@@ -116,10 +130,10 @@ export async function resendTicketEmailByAdmin({ adminUserId, shopifyOrderId, ti
   });
 
   if (result.skipped) {
-    return {
-      skipped: true,
-      message: "RESEND_API_KEY not configured",
-    };
+    throw new HttpError(503, "RESEND_API_KEY not configured", {
+      expose: true,
+      code: "provider_not_configured",
+    });
   }
 
   if (result.sent) {
@@ -138,10 +152,8 @@ export async function resendTicketEmailByAdmin({ adminUserId, shopifyOrderId, ti
     };
   }
 
-  return {
-    sent: false,
-    error: result.error,
-    shopifyOrderId: shopifyOrderIdStr,
-    ticketCount: rows.length,
-  };
+  throw new HttpError(502, buildProviderFailureDetail(result.error), {
+    expose: true,
+    code: "email_send_failed",
+  });
 }
