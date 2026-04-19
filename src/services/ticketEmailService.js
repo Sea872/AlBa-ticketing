@@ -13,15 +13,12 @@ import { logError, logInfo, logWarn } from "../utils/logger.js";
  * @typedef {{ ticketId: string, concertId: string, absolutePath: string, ticketIndex: number }} TicketEmailRow
  */
 
-async function buildConcertLabel(concertId) {
+async function buildConcertInfo(concertId) {
   const row = await findConcertById(concertId);
-  if (!row) {
-    return "Concert";
-  }
+  if (!row) return { name: "Concert", date: "", venue: "" };
   const d = row.concert_date;
-  const dateStr =
-    d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
-  return `${row.name} — ${dateStr} — ${row.venue}`;
+  const date = d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+  return { name: row.name, date, venue: row.venue || "" };
 }
 
 /**
@@ -44,26 +41,25 @@ export async function sendOrderTicketEmail({ shopifyOrderId, customerEmail, tick
 
   try {
     const rows = [];
+    const attachments = [];
+
     for (const t of tickets) {
-      const label = await buildConcertLabel(t.concertId);
-      rows.push({ label, ticketIndex: t.ticketIndex });
+      const concert = await buildConcertInfo(t.concertId);
+      const cid = `qr-${t.ticketIndex}-${String(t.ticketId).slice(0, 8)}`;
+      const buf = await fs.readFile(t.absolutePath);
+      rows.push({ ...concert, ticketIndex: t.ticketIndex, cid });
+      attachments.push({
+        filename: `ticket-${t.ticketIndex}-${String(t.ticketId).slice(0, 8)}.png`,
+        content: buf.toString("base64"),
+      });
     }
 
     const html = buildTicketOrderHtml({
       shopifyOrderId,
       customerEmail,
       rows,
+      isResend,
     });
-
-    const attachments = await Promise.all(
-      tickets.map(async (t) => {
-        const buf = await fs.readFile(t.absolutePath);
-        return {
-          filename: `ticket-${t.ticketIndex}-${String(t.ticketId).slice(0, 8)}.png`,
-          content: buf.toString("base64"),
-        };
-      })
-    );
 
     const resend = new Resend(resendApiKey);
     const subject = isResend
