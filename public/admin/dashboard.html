@@ -171,8 +171,8 @@
           <table class="data">
             <thead>
               <tr>
-                <th>Name</th>
                 <th>Date</th>
+                <th>Name</th>
                 <th>Venue</th>
                 <th>Status</th>
                 <th>Products</th>
@@ -368,8 +368,8 @@
                 readiness = '<span class="badge badge-warn">No products</span>';
               }
               return (
-                "<tr><td>" + esc(c.name) +
-                "</td><td>" + esc(c.concertDate) +
+                "<tr><td>" + esc(c.concertDate) +
+                "</td><td>" + esc(c.name) +
                 "</td><td>" + esc(c.venue) +
                 '</td><td><select class="status-quick" data-id="' + esc(c.id) + '" data-prev="' + esc(c.status) + '">' + statusOptions(c.status) +
                 "</select></td><td>" + esc(String(nP)) +
